@@ -214,6 +214,64 @@ retry可能性:
 
 これらにはtoken、secret、cookie、raw headers、customer note全文は出さない。
 
+### 0.1 Bad Request継続時の診断
+
+Application Errorをcustom ErrorBoundaryへ置き換えた後も、Draft Order作成ボタン押下後にquote detailが以下のBad Request表示になる状態が残った。
+
+```text
+見積依頼詳細
+エラー
+見積依頼詳細を表示できませんでした。画面を再読み込みするか、一覧へ戻って再度開いてください。
+Bad Request
+```
+
+また、`write_draft_orders` の権限更新/再インストール確認画面も表示されないケースがあった。
+
+この段階ではDraft Order mutationまで到達しているか、Admin auth/action POST自体で失敗しているかを切り分ける必要があるため、quote detail画面に開発用診断ボタンを追加した。
+
+診断ボタン:
+
+```text
+Admin認証だけ確認
+```
+
+診断action:
+
+```text
+intent=debug-admin-auth
+```
+
+処理内容:
+
+- `authenticate.admin(request)` を実行する。
+- 成功した場合だけ、軽いAdmin GraphQL query `shop { name myshopifyDomain }` を実行する。
+- 成功時はdetail画面内に `[debug] Admin auth OK`、`shop`、`myshopifyDomain` を表示する。
+- 失敗時はErrorBoundaryへ落とさず、detail画面内に `[auth] Admin auth failed` とsafe errorを表示する。
+- access token、API secret、session token、cookie、raw headers、full bodyは表示しない。
+
+切り分け:
+
+- `Admin認証だけ確認` もBad Request/認証エラーになる場合は、Draft Order mutationではなくAdmin action/auth/form/sessionの問題として調査する。
+- `Admin認証だけ確認` がOKで、`Draft Orderを作成` だけ失敗する場合は、`write_draft_orders` scope、mutation input、variantId、quantity、GraphQL `userErrors` を調査する。
+
+既知失敗時のHTTP status方針:
+
+- Draft Order作成actionの想定内失敗はHTTP 4xx/5xxを返さず、HTTP 200のActionDataとして返す。
+- 対象はintent不正、Admin authのnon-redirect Response、scope不足、variantId不正、quantity不正、GraphQL `userErrors`、top-level GraphQL errors、API exception、state不整合。
+- Shopify auth flowに必要なredirect Responseのみrethrowする。
+
+`write_draft_orders` scope反映確認:
+
+- `shopify.app.toml` に `write_draft_orders` があることを確認する。
+- `shopify app dev --reset --store b2b-quote-flow-test.myshopify.com` 起動ログで `app_access` に `write_draft_orders` が含まれるか確認する。
+- 権限更新画面が出ない場合でも、ログにscopeが含まれないならアプリをアンインストールして再インストールする。
+- それでもscopeが反映されない場合は、`shopify.app.toml` のscopeがdev serverに読み込まれていない可能性がある。
+
+注意:
+
+- `Admin認証だけ確認` はdev spike用の診断UI。
+- 本番前に削除するか、dev-only表示にする。
+
 ## 8. 未実装
 
 今回のスパイクでは以下は実装していない。

@@ -24,6 +24,7 @@ const DRAFT_ORDER_SAVE_FAILURE_NOTE = "[draft_order_save_error]";
 type ActionErrorType =
   | "auth"
   | "validation"
+  | "scope"
   | "graphql_user_error"
   | "graphql_error"
   | "api_error"
@@ -34,6 +35,10 @@ type ActionData =
   | {
       ok: true;
       message: string;
+      details?: Array<{
+        label: string;
+        value: string;
+      }>;
     }
   | {
       ok: false;
@@ -107,6 +112,10 @@ function logDraftOrderAction(
   details: Record<string, unknown>,
 ) {
   console.info(`b2b_quote_draft_order_${event}`, details);
+}
+
+function isScopeLikeError(message: string) {
+  return /access|permission|scope|draft order|draft_orders/i.test(message);
 }
 
 async function resetDraftOrderClaim(shop: string, quoteRequestId: string) {
@@ -223,30 +232,129 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   let auth: Awaited<ReturnType<typeof authenticate.admin>>;
 
   try {
+    logDraftOrderAction("before_auth", {
+      route: "app.quotes.$id",
+      phase: "action",
+      quoteRequestId: params.id || "",
+      intent,
+    });
+
     auth = await authenticate.admin(request);
   } catch (error) {
     if (shouldRethrowShopifyResponse(error)) {
       throw error;
     }
 
+    const safeError = describeCaughtError(error);
+
     console.error("b2b_quote_draft_order_auth_error", {
       route: "app.quotes.$id",
       phase: "action",
       quoteRequestId: params.id || "",
       intent,
-      error: describeCaughtError(error),
+      error: safeError,
     });
 
     return actionFailure(
       "auth",
-      "Shopify Admin認証に失敗しました。アプリを再読み込みし、権限更新または再インストールが必要か確認してください。",
+      `Shopify Admin認証に失敗しました。アプリを再読み込みし、権限更新または再インストールが必要か確認してください。${safeError.status ? ` (${safeError.status} ${safeError.statusText || ""})` : ""}`,
     );
   }
 
   const { admin, session } = auth;
+
+  logDraftOrderAction("after_auth", {
+    route: "app.quotes.$id",
+    phase: "action",
+    shop: session.shop,
+    quoteRequestId: params.id || "",
+    intent,
+  });
+
+  if (intent === "debug-admin-auth") {
+    try {
+      logDraftOrderAction("debug_before_graphql", {
+        route: "app.quotes.$id",
+        phase: "action",
+        shop: session.shop,
+        quoteRequestId: params.id || "",
+        intent,
+      });
+
+      const response = await admin.graphql(`#graphql
+        query AdminAuthDebug {
+          shop {
+            name
+            myshopifyDomain
+          }
+        }
+      `);
+      const body = (await response.json()) as {
+        data?: {
+          shop?: {
+            name?: string;
+            myshopifyDomain?: string;
+          };
+        };
+        errors?: Array<{ message: string }>;
+      };
+
+      if (body.errors?.length) {
+        return {
+          ok: false,
+          errors: body.errors.map((error) => ({
+            type: isScopeLikeError(error.message) ? "scope" : "graphql_error",
+            message: error.message,
+            field: undefined,
+          })),
+        } satisfies ActionData;
+      }
+
+      return {
+        ok: true,
+        message: "[debug] Admin auth OK",
+        details: [
+          { label: "shop", value: session.shop },
+          {
+            label: "myshopifyDomain",
+            value: body.data?.shop?.myshopifyDomain || "-",
+          },
+        ],
+      } satisfies ActionData;
+    } catch (error) {
+      if (shouldRethrowShopifyResponse(error)) {
+        throw error;
+      }
+
+      const safeError = describeCaughtError(error);
+
+      console.error("b2b_quote_draft_order_debug_auth_error", {
+        route: "app.quotes.$id",
+        phase: "action",
+        shop: session.shop,
+        quoteRequestId: params.id || "",
+        intent,
+        error: safeError,
+      });
+
+      return actionFailure(
+        safeError.status === 401 || safeError.status === 403 ? "scope" : "auth",
+        `[auth] Admin auth failed${safeError.status ? ` (${safeError.status} ${safeError.statusText || ""})` : ""}${safeError.message ? `: ${safeError.message}` : ""}`,
+      );
+    }
+  }
+
   let quote: Awaited<ReturnType<typeof getQuoteRequest>>;
 
   try {
+    logDraftOrderAction("before_quote_lookup", {
+      route: "app.quotes.$id",
+      phase: "action",
+      shop: session.shop,
+      quoteRequestId: params.id || "",
+      intent,
+    });
+
     quote = await getQuoteRequest(session.shop, params.id || "");
   } catch (error) {
     console.error("b2b_quote_draft_order_quote_lookup_error", {
@@ -265,6 +373,15 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   }
 
   if (!quote) {
+    logDraftOrderAction("quote_lookup_result", {
+      route: "app.quotes.$id",
+      phase: "action",
+      shop: session.shop,
+      quoteRequestId: params.id || "",
+      intent,
+      quoteFound: false,
+    });
+
     return actionFailure(
       "state",
       "見積依頼が見つかりません。shopまたはquote IDを確認してください。",
@@ -322,9 +439,41 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 
   if (quote.status === "REVIEWING" && !quote.draftOrderId) {
     claimed = true;
+    logDraftOrderAction("claim_result", {
+      route: "app.quotes.$id",
+      phase: "action",
+      shop: session.shop,
+      quoteRequestId: quote.id,
+      intent,
+      quoteStatus: quote.status,
+      hasDraftOrderId: false,
+      claimed,
+      retryingReviewingQuote: true,
+    });
   } else {
     try {
+      logDraftOrderAction("before_claim", {
+        route: "app.quotes.$id",
+        phase: "action",
+        shop: session.shop,
+        quoteRequestId: quote.id,
+        intent,
+        quoteStatus: quote.status,
+        hasDraftOrderId: Boolean(quote.draftOrderId),
+      });
+
       claimed = await claimQuoteDraftOrderCreation(session.shop, quote.id);
+
+      logDraftOrderAction("claim_result", {
+        route: "app.quotes.$id",
+        phase: "action",
+        shop: session.shop,
+        quoteRequestId: quote.id,
+        intent,
+        quoteStatus: quote.status,
+        hasDraftOrderId: Boolean(quote.draftOrderId),
+        claimed,
+      });
     } catch (error) {
       console.error("b2b_quote_draft_order_claim_error", {
         route: "app.quotes.$id",
@@ -352,10 +501,35 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   }
 
   try {
+    logDraftOrderAction("before_graphql", {
+      route: "app.quotes.$id",
+      phase: "action",
+      shop: session.shop,
+      quoteRequestId: quote.id,
+      quoteStatus: quote.status,
+      hasDraftOrderId: false,
+      variantIdIsGid: Boolean(normalizedVariantId),
+      quantity: quote.quantity,
+    });
+
     const result = await createDraftOrderForQuote(admin.graphql, quote);
 
     if (!result.ok) {
       await resetDraftOrderClaim(session.shop, quote.id);
+
+      const actionErrors = result.errors.map((error) => ({
+        ...error,
+        type:
+          error.type === "graphql_error" && isScopeLikeError(error.message)
+            ? ("scope" as const)
+            : error.type,
+      }));
+      const graphqlUserErrorCount = result.errors.filter(
+        (error) => error.type === "graphql_user_error",
+      ).length;
+      const graphqlErrorCount = result.errors.filter(
+        (error) => error.type === "graphql_error",
+      ).length;
 
       logDraftOrderAction("graphql_failed", {
         route: "app.quotes.$id",
@@ -366,6 +540,8 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         hasDraftOrderId: false,
         variantIdIsGid: Boolean(normalizedVariantId),
         quantity: quote.quantity,
+        graphqlUserErrorCount,
+        graphqlErrorCount,
         errors: result.errors.map((error) => ({
           type: error.type,
           field: error.field,
@@ -375,11 +551,19 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 
       return {
         ok: false,
-        errors: result.errors,
+        errors: actionErrors,
       } satisfies ActionData;
     }
 
     try {
+      logDraftOrderAction("before_db_save", {
+        route: "app.quotes.$id",
+        phase: "action",
+        shop: session.shop,
+        quoteRequestId: quote.id,
+        draftOrderId: result.draftOrder.id,
+      });
+
       await saveQuoteDraftOrder(session.shop, quote.id, result.draftOrder);
     } catch (error) {
       console.error("b2b_quote_draft_order_save_error", {
@@ -408,6 +592,15 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         ],
       } satisfies ActionData;
     }
+
+    logDraftOrderAction("success", {
+      route: "app.quotes.$id",
+      phase: "action",
+      shop: session.shop,
+      quoteRequestId: quote.id,
+      draftOrderId: result.draftOrder.id,
+      draftOrderName: result.draftOrder.name,
+    });
 
     return {
       ok: true,
@@ -525,8 +718,21 @@ export default function QuoteDetail() {
               )}
             </>
           )}
+          <Form method="post">
+            <input type="hidden" name="intent" value="debug-admin-auth" />
+            <button type="submit" disabled={isSubmitting}>
+              Admin認証だけ確認
+            </button>
+          </Form>
           {actionData?.ok ? (
-            <s-paragraph>{actionData.message}</s-paragraph>
+            <div>
+              <s-paragraph>{actionData.message}</s-paragraph>
+              {actionData.details?.map((detail) => (
+                <s-paragraph key={`${detail.label}:${detail.value}`}>
+                  {detail.label}: {detail.value}
+                </s-paragraph>
+              ))}
+            </div>
           ) : null}
           {actionData && !actionData.ok ? (
             <div>
