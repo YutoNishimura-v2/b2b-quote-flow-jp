@@ -63,6 +63,7 @@ type LoaderData =
   | {
       quote: NonNullable<Awaited<ReturnType<typeof getQuoteRequest>>>;
       loaderError: null;
+      showAdminAuthDebug: boolean;
     }
   | {
       quote: null;
@@ -70,6 +71,7 @@ type LoaderData =
         message: string;
         error: SafeError;
       };
+      showAdminAuthDebug: boolean;
     };
 
 function describeCaughtError(error: unknown): SafeError {
@@ -129,6 +131,22 @@ function jsonActionSuccess(
   return jsonAction({ ok: true, message, details });
 }
 
+function draftOrderActionDetails(
+  draftOrder: {
+    id: string;
+    name?: string | null;
+    adminUrl?: string | null;
+  },
+  quoteStatus = "QUOTE_CREATED",
+) {
+  return [
+    { label: "Quote status", value: quoteStatus },
+    { label: "Draft Order ID", value: draftOrder.id },
+    { label: "Draft Order Name", value: draftOrder.name || "-" },
+    { label: "管理画面リンク", value: draftOrder.adminUrl || "-" },
+  ];
+}
+
 function logDraftOrderAction(
   event: string,
   details: Record<string, unknown>,
@@ -181,6 +199,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     if (!quote) {
       return {
         quote: null,
+        showAdminAuthDebug: process.env.NODE_ENV !== "production",
         loaderError: {
           message: "見積依頼が見つかりません。一覧へ戻って再度開いてください。",
           error: { type: "NotFound", status: 404, statusText: "Not Found" },
@@ -197,7 +216,11 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       hasDraftOrderId: Boolean(quote.draftOrderId),
     });
 
-    return { quote, loaderError: null } satisfies LoaderData;
+    return {
+      quote,
+      loaderError: null,
+      showAdminAuthDebug: process.env.NODE_ENV !== "production",
+    } satisfies LoaderData;
   } catch (error) {
     if (shouldRethrowShopifyResponse(error)) {
       throw error;
@@ -214,6 +237,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
     return {
       quote: null,
+      showAdminAuthDebug: process.env.NODE_ENV !== "production",
       loaderError: {
         message:
           safeError.status === 400
@@ -311,6 +335,13 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   });
 
   if (intent === "debug-admin-auth") {
+    if (process.env.NODE_ENV === "production") {
+      return jsonActionFailure(
+        "validation",
+        "Admin認証診断は開発環境専用です。本番では表示・実行しません。",
+      );
+    }
+
     try {
       logDraftOrderAction("debug_before_graphql", {
         route: "app.quotes.$id",
@@ -444,7 +475,14 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   }
 
   if (quote.draftOrderId) {
-    return jsonActionSuccess("Draft Orderは既に作成済みです。");
+    return jsonActionSuccess(
+      "Draft Orderは既に作成済みです。",
+      draftOrderActionDetails({
+        id: quote.draftOrderId,
+        name: quote.draftOrderName,
+        adminUrl: quote.draftOrderAdminUrl,
+      }, quote.status),
+    );
   }
 
   if (
@@ -638,7 +676,10 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       draftOrderName: result.draftOrder.name,
     });
 
-    return jsonActionSuccess("Draft Orderを作成しました。");
+    return jsonActionSuccess(
+      "Draft Orderを作成しました。",
+      draftOrderActionDetails(result.draftOrder),
+    );
   } catch (error) {
     await resetDraftOrderClaim(session.shop, quote.id);
 
@@ -662,9 +703,13 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 };
 
 export default function QuoteDetail() {
-  const { quote, loaderError } = useLoaderData<typeof loader>();
+  const { quote, loaderError, showAdminAuthDebug } =
+    useLoaderData<typeof loader>();
   const [actionData, setActionData] = useState<ActionData | null>(null);
   const [submittingIntent, setSubmittingIntent] = useState<string | null>(null);
+  const actionDraftOrderCreated =
+    actionData?.ok &&
+    actionData.details?.some((detail) => detail.label === "Draft Order ID");
 
   async function submitAction(intent: "create-draft-order" | "debug-admin-auth") {
     setSubmittingIntent(intent);
@@ -778,27 +823,40 @@ export default function QuoteDetail() {
             </Link>
           ) : null}
           {quote.draftOrderId ? (
-            <div>
+            <div aria-label="Draft Order作成状態">
               <s-paragraph>Draft Order作成済み</s-paragraph>
-              <s-paragraph>ID: {quote.draftOrderId}</s-paragraph>
-              <s-paragraph>Name: {quote.draftOrderName || "-"}</s-paragraph>
+              <s-paragraph>Quote status: {quote.status}</s-paragraph>
+              <s-paragraph>Draft Order ID: {quote.draftOrderId}</s-paragraph>
+              <s-paragraph>Draft Order Name: {quote.draftOrderName || "-"}</s-paragraph>
               {quote.draftOrderCreatedAt ? (
                 <s-paragraph>
                   作成日時: {new Date(quote.draftOrderCreatedAt).toLocaleString("ja-JP")}
                 </s-paragraph>
               ) : null}
               {quote.draftOrderAdminUrl ? (
-                <a href={quote.draftOrderAdminUrl} target="_blank" rel="noreferrer">
-                  Shopify AdminでDraft Orderを開く
-                </a>
-              ) : null}
+                <s-paragraph>
+                  管理画面リンク:{" "}
+                  <a href={quote.draftOrderAdminUrl} target="_blank" rel="noreferrer">
+                    Shopify AdminでDraft Orderを開く
+                  </a>
+                </s-paragraph>
+              ) : (
+                <s-paragraph>管理画面リンク: -</s-paragraph>
+              )}
+              <s-paragraph>
+                このquoteではDraft Order再作成ボタンを表示しません。二重作成防止のため、既存のDraft Orderを確認してください。
+              </s-paragraph>
             </div>
           ) : (
             <>
-              {quote.status === "NEW" ||
-              (quote.status === "REVIEWING" &&
-                !quote.draftOrderId &&
-                !hasDraftOrderSaveFailureMarker(quote.internalNote)) ? (
+              {actionDraftOrderCreated ? (
+                <s-paragraph>
+                  Draft Order作成済みです。二重作成防止のため、再作成ボタンは表示しません。
+                </s-paragraph>
+              ) : quote.status === "NEW" ||
+                (quote.status === "REVIEWING" &&
+                  !quote.draftOrderId &&
+                  !hasDraftOrderSaveFailureMarker(quote.internalNote)) ? (
                 <div>
                   <button
                     type="button"
@@ -819,23 +877,33 @@ export default function QuoteDetail() {
               )}
             </>
           )}
-          <div>
-            <button
-              type="button"
-              disabled={Boolean(submittingIntent)}
-              onClick={() => submitAction("debug-admin-auth")}
-            >
-              {submittingIntent === "debug-admin-auth"
-                ? "確認中..."
-                : "Admin認証だけ確認"}
-            </button>
-          </div>
+          {showAdminAuthDebug ? (
+            <div>
+              <button
+                type="button"
+                disabled={Boolean(submittingIntent)}
+                onClick={() => submitAction("debug-admin-auth")}
+              >
+                {submittingIntent === "debug-admin-auth"
+                  ? "確認中..."
+                  : "Admin認証だけ確認"}
+              </button>
+            </div>
+          ) : null}
           {actionData?.ok ? (
             <div>
               <s-paragraph>{actionData.message}</s-paragraph>
               {actionData.details?.map((detail) => (
                 <s-paragraph key={`${detail.label}:${detail.value}`}>
-                  {detail.label}: {detail.value}
+                  {detail.label}:{" "}
+                  {detail.label === "管理画面リンク" &&
+                  detail.value.startsWith("https://") ? (
+                    <a href={detail.value} target="_blank" rel="noreferrer">
+                      Shopify AdminでDraft Orderを開く
+                    </a>
+                  ) : (
+                    detail.value
+                  )}
                 </s-paragraph>
               ))}
             </div>

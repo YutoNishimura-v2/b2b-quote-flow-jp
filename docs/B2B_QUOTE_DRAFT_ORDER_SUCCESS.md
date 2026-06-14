@@ -66,6 +66,31 @@ This app is not approved to access the DraftOrder object.
 - quote detailに保存されたDraft Order ID/Name/Admin URLが正しいこと。
 - statusが `QUOTE_CREATED` へ更新されていること。
 
+## Draft Order実体確認チェックリスト
+
+実ストアでDraft Order作成後、Shopify Admin側で以下を確認する。
+
+- Shopify Admin > 注文管理 > 下書き に作成済みDraft Orderが存在すること。
+- line itemの商品、variant、数量がquote detailの内容と一致すること。
+- 顧客メールがquoteのメールアドレスと一致すること。
+- noteにquote ID、会社名、担当者名、請求書払い相談、稟議用PDF希望、顧客備考が入っていること。
+- customAttributesにQuote Request ID、Company、Contact、Wants invoice payment、Needs approval PDF、Customer noteが入っていること。
+- 同じquote detailを再表示しても作成ボタンが出ず、二重作成されないこと。
+- quote detailのstatusが `QUOTE_CREATED` と表示されること。
+- quote detailのDraft Order ID/Name/管理画面リンクがShopify Adminの下書き注文と対応していること。
+
+## `Admin認証だけ確認` 診断ボタンの扱い
+
+`Admin認証だけ確認` はDraft Order spike中に、Admin auth、session scope、resource route POST、GraphQL到達可否を切り分けるために追加した開発用診断UI。
+
+一般マーチャント向けの本番UIに残すべき機能ではない。
+
+現時点では、実ストア検証中の再発調査に使えるように、削除ではなくdev-only化する方針とする。
+
+- `NODE_ENV !== "production"` のときだけquote detailに診断ボタンを表示する。
+- `NODE_ENV === "production"` では直接POSTされても診断処理を実行しない。
+- 本番deploy前の最終判断で、完全削除するかdev-onlyのまま内部診断として残すかを再確認する。
+
 ## Production-readyではない理由
 
 今回の成功はdev store上の小スパイク成功。
