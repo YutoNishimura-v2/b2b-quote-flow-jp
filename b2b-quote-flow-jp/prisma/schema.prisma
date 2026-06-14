@@ -51,6 +51,10 @@ model QuoteRequest {
   needsApprovalPdf     Boolean  @default(false)
   customerNote         String   @default("")
   internalNote         String   @default("")
+  draftOrderId         String?
+  draftOrderName       String?
+  draftOrderAdminUrl   String?
+  draftOrderCreatedAt  DateTime?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 

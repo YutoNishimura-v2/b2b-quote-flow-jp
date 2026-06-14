@@ -71,6 +71,20 @@ function normalizeProductUrl(value: unknown) {
   }
 }
 
+export function normalizeProductVariantGid(variantId: string) {
+  const normalized = variantId.trim();
+
+  if (/^gid:\/\/shopify\/ProductVariant\/\d+$/.test(normalized)) {
+    return normalized;
+  }
+
+  if (/^\d+$/.test(normalized)) {
+    return `gid://shopify/ProductVariant/${normalized}`;
+  }
+
+  return "";
+}
+
 function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
@@ -179,5 +193,57 @@ export function listQuoteRequests(shop: string) {
 export function getQuoteRequest(shop: string, id: string) {
   return prisma.quoteRequest.findFirst({
     where: { id, shop },
+  });
+}
+
+export async function claimQuoteDraftOrderCreation(shop: string, quoteRequestId: string) {
+  const result = await prisma.quoteRequest.updateMany({
+    where: {
+      id: quoteRequestId,
+      shop,
+      draftOrderId: null,
+      status: "NEW",
+    },
+    data: {
+      status: "REVIEWING",
+    },
+  });
+
+  return result.count === 1;
+}
+
+export function resetQuoteDraftOrderCreation(shop: string, quoteRequestId: string) {
+  return prisma.quoteRequest.updateMany({
+    where: {
+      id: quoteRequestId,
+      shop,
+      draftOrderId: null,
+      status: "REVIEWING",
+    },
+    data: {
+      status: "NEW",
+    },
+  });
+}
+
+export function saveQuoteDraftOrder(
+  shop: string,
+  quoteRequestId: string,
+  draftOrder: {
+    id: string;
+    name: string;
+    adminUrl: string;
+    createdAt: Date;
+  },
+) {
+  return prisma.quoteRequest.update({
+    where: { id: quoteRequestId, shop },
+    data: {
+      status: "QUOTE_CREATED",
+      draftOrderId: draftOrder.id,
+      draftOrderName: draftOrder.name,
+      draftOrderAdminUrl: draftOrder.adminUrl,
+      draftOrderCreatedAt: draftOrder.createdAt,
+    },
   });
 }
