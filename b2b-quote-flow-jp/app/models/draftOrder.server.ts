@@ -23,7 +23,12 @@ type DraftOrderCreateResponse = {
 };
 
 type DraftOrderCreateError = {
-  type: "validation" | "graphql_user_error" | "graphql_error" | "api_error";
+  type:
+    | "validation"
+    | "protected_customer_data"
+    | "graphql_user_error"
+    | "graphql_error"
+    | "api_error";
   message: string;
   field?: string;
 };

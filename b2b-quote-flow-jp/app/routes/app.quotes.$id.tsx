@@ -26,6 +26,7 @@ const DRAFT_ORDER_SAVE_FAILURE_NOTE = "[draft_order_save_error]";
 type ActionErrorType =
   | "auth"
   | "validation"
+  | "protected_customer_data"
   | "scope"
   | "graphql_user_error"
   | "graphql_error"
@@ -137,6 +138,10 @@ function logDraftOrderAction(
 
 function isScopeLikeError(message: string) {
   return /access|permission|scope|draft order|draft_orders/i.test(message);
+}
+
+function isProtectedCustomerDataError(message: string) {
+  return /protected customer data|not approved to access the .* object|not approved to use/i.test(message);
 }
 
 async function resetDraftOrderClaim(shop: string, quoteRequestId: string) {
@@ -548,7 +553,10 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       const actionErrors = result.errors.map((error) => ({
         ...error,
         type:
-          isScopeLikeError(error.message)
+          error.type === "protected_customer_data" ||
+          isProtectedCustomerDataError(error.message)
+            ? ("protected_customer_data" as const)
+            : isScopeLikeError(error.message)
             ? ("scope" as const)
             : error.type,
       }));
