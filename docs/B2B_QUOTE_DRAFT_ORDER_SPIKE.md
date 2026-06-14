@@ -335,6 +335,30 @@ intent=debug-admin-auth
 - JSONではないレスポンスは `[api_error] JSONとして読めないレスポンスです。HTTP <status> ...` として先頭500文字だけ表示する。
 - 空bodyは `[api_error] 空のレスポンスです。HTTP <status> ...` として表示する。
 
+### 0.5 React Router action CSRF許可Origin
+
+`fetch` 切り替え後、画面内に以下が表示された。
+
+```text
+[api_error] JSONとして読めないレスポンスです。HTTP 400 : Bad Request
+```
+
+原因:
+
+- React Router 7.9系にはUI route actionへの外部Origin POSTを拒否するCSRF保護がある。
+- Shopify Admin embedded appでは、POSTの `Origin` がアプリhostではなく `admin.shopify.com` になることがある。
+- `Origin` と `host` / `x-forwarded-host` が一致せず、`allowedActionOrigins` 未設定のため、action実行前にReact Routerが `Bad Request` を返していた。
+
+修正内容:
+
+- `react-router.config.ts` を追加。
+- `allowedActionOrigins` に `admin.shopify.com`、`*.myshopify.com`、`**.app.github.dev` を追加。
+
+注意:
+
+- これはShopify Admin embedded appからのaction POSTを許可するための設定。
+- secret、token、cookie、raw headersはログ出力しない。
+
 ## 8. 未実装
 
 今回のスパイクでは以下は実装していない。
