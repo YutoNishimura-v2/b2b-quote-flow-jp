@@ -1,0 +1,22 @@
+# dependencies
+**/node_modules/
+
+# env / secrets
+**/.env
+**/.env.*
+!**/.env.example
+
+# local databases
+**/dev.sqlite
+**/*.sqlite
+**/*.sqlite-journal
+
+# Shopify local state
+**/.shopify/
+
+# build/cache
+**/build/
+**/dist/
+**/.cache/
+**/.turbo/
+**/.vite/

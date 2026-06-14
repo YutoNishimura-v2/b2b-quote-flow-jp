@@ -1,0 +1,43 @@
+{{ 'b2b-quote-button.css' | asset_url | stylesheet_tag }}
+
+{% assign current_variant = product.selected_or_first_available_variant %}
+
+<div
+  class="b2b-quote-button-block"
+  data-b2b-quote-root
+  data-shop="{{ shop.permanent_domain | escape }}"
+  data-product-id="{{ product.id }}"
+  data-variant-id="{{ current_variant.id }}"
+  data-product-title="{{ product.title | escape }}"
+  data-variant-title="{{ current_variant.title | escape }}"
+  data-product-url="{{ shop.url }}{{ product.url | escape }}"
+  data-product-tags="{{ product.tags | join: ',' | escape }}"
+  data-submit-endpoint-path="{{ block.settings.submit_endpoint_path | escape }}"
+>
+  <button class="b2b-quote-button" type="button" data-b2b-quote-open>
+    {{ block.settings.button_label | escape }}
+  </button>
+</div>
+
+<script src="{{ 'b2b-quote-button.js' | asset_url }}" defer></script>
+
+{% schema %}
+{
+  "name": "法人見積ボタン",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "button_label",
+      "label": "Button label",
+      "default": "法人見積を依頼"
+    },
+    {
+      "type": "text",
+      "id": "submit_endpoint_path",
+      "label": "Submit endpoint path",
+      "default": "/apps/b2b-quote/api/b2b-quote/requests"
+    }
+  ]
+}
+{% endschema %}

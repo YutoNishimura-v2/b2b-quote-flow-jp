@@ -1,0 +1,128 @@
+.b2b-quote-button-block {
+  margin: 16px 0;
+}
+
+.b2b-quote-button {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid rgba(18, 18, 18, 0.9);
+  background: #121212;
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  padding: 12px 18px;
+}
+
+.b2b-quote-button:hover {
+  background: #2d2d2d;
+}
+
+.b2b-quote-modal[hidden] {
+  display: none;
+}
+
+.b2b-quote-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+}
+
+.b2b-quote-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.48);
+}
+
+.b2b-quote-modal__dialog {
+  position: relative;
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  margin: 16px auto;
+  background: #ffffff;
+  color: #121212;
+  padding: 20px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.24);
+}
+
+.b2b-quote-modal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.b2b-quote-modal__title {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.35;
+}
+
+.b2b-quote-modal__close {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.b2b-quote-form {
+  display: grid;
+  gap: 12px;
+}
+
+.b2b-quote-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.b2b-quote-form input,
+.b2b-quote-form textarea {
+  width: 100%;
+  border: 1px solid rgba(18, 18, 18, 0.24);
+  font: inherit;
+  padding: 10px;
+}
+
+.b2b-quote-form textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.b2b-quote-form__checks {
+  display: grid;
+  gap: 8px;
+}
+
+.b2b-quote-form__checks label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.b2b-quote-submit {
+  min-height: 44px;
+  border: 0;
+  background: #121212;
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  padding: 10px 16px;
+}
+
+.b2b-quote-status {
+  min-height: 20px;
+  font-size: 14px;
+}
+
+.b2b-quote-status[data-state="error"] {
+  color: #b42318;
+}
+
+.b2b-quote-status[data-state="success"] {
+  color: #067647;
+}
