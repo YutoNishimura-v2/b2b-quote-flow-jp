@@ -5,6 +5,9 @@ import {
   type QuoteRequestInput,
   verifyAppProxySignature,
 } from "../models/quoteRequest.server";
+import { sendMerchantQuoteNotification } from "../models/merchantNotification.server";
+import { recordQuoteEvent } from "../models/quoteEvent.server";
+import { getShopSettings } from "../models/shopSettings.server";
 
 type ErrorStatus = 400 | 401 | 404 | 405 | 500;
 
@@ -92,6 +95,60 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     logPostResult(url, 200, "success", {
       quoteRequestId: result.quote.id,
     });
+
+    await recordQuoteEvent({
+      shop: result.quote.shop,
+      quoteRequestId: result.quote.id,
+      type: "quote_created",
+      message: `Quote request created for ${result.quote.companyName}.`,
+      metadata: {
+        productTitle: result.quote.productTitle,
+        variantTitle: result.quote.variantTitle,
+        quantity: result.quote.quantity,
+      },
+    });
+
+    try {
+      const settings = await getShopSettings(result.quote.shop);
+      const notificationResult = await sendMerchantQuoteNotification(
+        result.quote,
+        settings,
+      );
+
+      await recordQuoteEvent({
+        shop: result.quote.shop,
+        quoteRequestId: result.quote.id,
+        type: notificationResult.ok
+          ? "merchant_notification_sent"
+          : notificationResult.skipped
+          ? "merchant_notification_skipped"
+          : "merchant_notification_failed",
+        message: notificationResult.message,
+        metadata: {
+          recipientConfigured: Boolean(settings.notificationEmail),
+          notificationEnabled: settings.quoteEmailNotificationsEnabled,
+          provider: "provider" in notificationResult
+            ? notificationResult.provider
+            : undefined,
+          reason: "reason" in notificationResult
+            ? notificationResult.reason
+            : undefined,
+        },
+      });
+    } catch (error) {
+      console.error("b2b_quote_merchant_notification_unhandled_error", {
+        shop: result.quote.shop,
+        quoteRequestId: result.quote.id,
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+
+      await recordQuoteEvent({
+        shop: result.quote.shop,
+        quoteRequestId: result.quote.id,
+        type: "merchant_notification_failed",
+        message: "Merchant notification failed before delivery attempt completed.",
+      });
+    }
 
     return jsonResponse({
       ok: true,

@@ -18,10 +18,20 @@ import {
   normalizeProductVariantGid,
   resetQuoteDraftOrderCreation,
   saveQuoteDraftOrder,
+  updateQuoteStatusAndInternalNote,
 } from "../models/quoteRequest.server";
+import { recordQuoteEvent } from "../models/quoteEvent.server";
 import { authenticate } from "../shopify.server";
 
 const DRAFT_ORDER_SAVE_FAILURE_NOTE = "[draft_order_save_error]";
+const QUOTE_STATUS_OPTIONS = [
+  "NEW",
+  "REVIEWING",
+  "QUOTE_CREATED",
+  "SENT",
+  "WON",
+  "LOST",
+];
 
 type ActionErrorType =
   | "auth"
@@ -121,7 +131,7 @@ function jsonActionFailure(
   message: string,
   field?: string,
 ) {
-  return jsonAction(actionFailure(type, message, field));
+    return jsonAction(actionFailure(type, message, field));
 }
 
 function jsonActionSuccess(
@@ -255,7 +265,11 @@ export const shouldRevalidate = ({
 }: ShouldRevalidateFunctionArgs) => {
   const intent = String(formData?.get("intent") || "");
 
-  if (intent === "create-draft-order" || intent === "debug-admin-auth") {
+  if (
+    intent === "create-draft-order" ||
+    intent === "debug-admin-auth" ||
+    intent === "update-quote"
+  ) {
     return false;
   }
 
@@ -470,6 +484,45 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     quantity: quote.quantity,
   });
 
+  if (intent === "update-quote") {
+    const result = await updateQuoteStatusAndInternalNote(
+      session.shop,
+      quote.id,
+      {
+        status: formData.get("status"),
+        internalNote: formData.get("internalNote"),
+      },
+    );
+
+    if (!result.ok) {
+      const firstError = Object.entries(result.errors)[0];
+
+      return jsonActionFailure(
+        "validation",
+        firstError?.[1] || "quoteの更新に失敗しました。",
+        firstError?.[0],
+      );
+    }
+
+    await recordQuoteEvent({
+      shop: session.shop,
+      quoteRequestId: quote.id,
+      type: "quote_updated",
+      message: `Quote status updated from ${result.previousQuote.status} to ${result.quote.status}.`,
+      metadata: {
+        previousStatus: result.previousQuote.status,
+        status: result.quote.status,
+        internalNoteChanged:
+          result.previousQuote.internalNote !== result.quote.internalNote,
+      },
+    });
+
+    return jsonActionSuccess("quoteのstatus/internal noteを更新しました。", [
+      { label: "Quote status", value: result.quote.status },
+      { label: "Internal note", value: result.quote.internalNote || "-" },
+    ]);
+  }
+
   if (intent !== "create-draft-order") {
     return jsonActionFailure("validation", "不明な操作です。画面を再読み込みして再試行してください。");
   }
@@ -639,6 +692,17 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       });
 
       await saveQuoteDraftOrder(session.shop, quote.id, result.draftOrder);
+      await recordQuoteEvent({
+        shop: session.shop,
+        quoteRequestId: quote.id,
+        type: "draft_order_created",
+        message: `Draft Order ${result.draftOrder.name} created.`,
+        metadata: {
+          draftOrderId: result.draftOrder.id,
+          draftOrderName: result.draftOrder.name,
+          draftOrderAdminUrl: result.draftOrder.adminUrl,
+        },
+      });
     } catch (error) {
       console.error("b2b_quote_draft_order_save_error", {
         route: "app.quotes.$id",
@@ -707,16 +771,25 @@ export default function QuoteDetail() {
     useLoaderData<typeof loader>();
   const [actionData, setActionData] = useState<ActionData | null>(null);
   const [submittingIntent, setSubmittingIntent] = useState<string | null>(null);
+  const [quoteStatus, setQuoteStatus] = useState(quote?.status || "NEW");
+  const [internalNote, setInternalNote] = useState(quote?.internalNote || "");
   const actionDraftOrderCreated =
     actionData?.ok &&
     actionData.details?.some((detail) => detail.label === "Draft Order ID");
 
-  async function submitAction(intent: "create-draft-order" | "debug-admin-auth") {
+  async function submitAction(
+    intent: "create-draft-order" | "debug-admin-auth" | "update-quote",
+  ) {
     setSubmittingIntent(intent);
     setActionData(null);
 
     const formData = new FormData();
     formData.set("intent", intent);
+
+    if (intent === "update-quote") {
+      formData.set("status", quoteStatus);
+      formData.set("internalNote", internalNote);
+    }
 
     try {
       const actionUrl = new URL(
@@ -817,6 +890,45 @@ export default function QuoteDetail() {
             稟議用PDF希望: {quote.needsApprovalPdf ? "あり" : "なし"}
           </s-paragraph>
           <s-paragraph>備考: {quote.customerNote || "-"}</s-paragraph>
+          <div>
+            <s-paragraph>内部メモ</s-paragraph>
+            <label>
+              Status
+              <select
+                value={quoteStatus}
+                onChange={(event) => setQuoteStatus(event.currentTarget.value)}
+                disabled={Boolean(submittingIntent)}
+                style={{ display: "block", marginTop: 4 }}
+              >
+                {QUOTE_STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "block", marginTop: 8 }}>
+              Internal note
+              <textarea
+                value={internalNote}
+                onChange={(event) => setInternalNote(event.currentTarget.value)}
+                disabled={Boolean(submittingIntent)}
+                rows={4}
+                style={{ display: "block", marginTop: 4, width: "100%" }}
+                placeholder="営業対応メモ、確認事項、次アクションなど"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={Boolean(submittingIntent)}
+              onClick={() => submitAction("update-quote")}
+              style={{ marginTop: 8 }}
+            >
+              {submittingIntent === "update-quote"
+                ? "更新中..."
+                : "status/internal noteを更新"}
+            </button>
+          </div>
           {quote.productUrl ? (
             <Link to={quote.productUrl} target="_blank" rel="noreferrer">
               商品ページを開く

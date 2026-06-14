@@ -79,11 +79,18 @@ function draftOrderNote(quote: QuoteRequest) {
   return [
     "B2B Quote Flow JP",
     `Quote Request ID: ${quote.id}`,
+    `Quote status: ${quote.status}`,
     `Company: ${quote.companyName}`,
     `Contact: ${quote.contactName}`,
+    `Customer email: ${quote.email}`,
+    `Product: ${quote.productTitle}`,
+    quote.variantTitle ? `Variant: ${quote.variantTitle}` : "",
+    `Quantity: ${quote.quantity}`,
     `Invoice payment requested: ${quote.wantsInvoicePayment ? "yes" : "no"}`,
     `Approval PDF requested: ${quote.needsApprovalPdf ? "yes" : "no"}`,
+    quote.productUrl ? `Product URL: ${quote.productUrl}` : "",
     quote.customerNote ? `Customer note: ${quote.customerNote}` : "",
+    quote.internalNote ? `Internal note: ${quote.internalNote}` : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -91,6 +98,14 @@ function draftOrderNote(quote: QuoteRequest) {
 
 function truncate(value: string, maxLength = 500) {
   return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
+}
+
+function attributeValue(value: string | number | boolean | null | undefined) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  return truncate(String(value), 255);
 }
 
 async function describeGraphqlException(error: unknown): Promise<DraftOrderCreateError[]> {
@@ -172,12 +187,22 @@ export async function createDraftOrderForQuote(
             },
           ],
           customAttributes: [
-            { key: "Quote Request ID", value: quote.id },
-            { key: "Company", value: quote.companyName },
-            { key: "Contact", value: quote.contactName },
-            { key: "Wants invoice payment", value: quote.wantsInvoicePayment ? "yes" : "no" },
-            { key: "Needs approval PDF", value: quote.needsApprovalPdf ? "yes" : "no" },
-            { key: "Customer note", value: quote.customerNote || "" },
+            { key: "Quote Request ID", value: attributeValue(quote.id) },
+            { key: "Quote status", value: attributeValue(quote.status) },
+            { key: "Company", value: attributeValue(quote.companyName) },
+            { key: "Contact", value: attributeValue(quote.contactName) },
+            { key: "Product", value: attributeValue(quote.productTitle) },
+            { key: "Variant", value: attributeValue(quote.variantTitle) },
+            { key: "Quantity", value: attributeValue(quote.quantity) },
+            {
+              key: "Wants invoice payment",
+              value: attributeValue(quote.wantsInvoicePayment ? "yes" : "no"),
+            },
+            {
+              key: "Needs approval PDF",
+              value: attributeValue(quote.needsApprovalPdf ? "yes" : "no"),
+            },
+            { key: "Customer note", value: attributeValue(quote.customerNote) },
           ],
         },
       },

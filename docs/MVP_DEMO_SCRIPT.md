@@ -12,10 +12,15 @@ B2B Quote Flow JPは、商品ページから法人見積依頼を受け付け、
 - ボタンから見積依頼モーダルを開ける。
 - 会社名、担当者、メール、数量、備考、請求書払い相談、稟議PDF希望を入力できる。
 - 見積依頼を保存できる。
+- 見積依頼が来たときにmerchant email通知を試行できる。
+- 通知先メールをAdminで設定できる。
 - Shopify Admin appでquote list/detailを確認できる。
+- Admin homeで最小利用状況とRecent eventsを確認できる。
 - quote detailからShopify Draft Orderを作成できる。
+- quote detailでstatus/internal noteを更新できる。
 - Draft Order作成済み状態、ID、Name、管理画面リンクを表示できる。
 - 同じquoteからの二重作成を防止できる。
+- 無料βチェックリストで導入確認できる。
 - Draft Order作成に必要なProtected Customer Data設定はdev storeで確認済み。
 
 ## 3. 3分デモ手順
@@ -31,7 +36,20 @@ B2B Quote Flow JPは、商品ページから法人見積依頼を受け付け、
 - Dawnの商品ページ。
 - 商品情報セクション内の法人見積ボタン。
 
-### 0:20-0:55 Storefrontから見積依頼
+### 0:20-0:45 β設定確認
+
+操作:
+
+1. Admin appのβ設定を開く。
+2. 通知先メールと通知ON/OFFを見せる。
+3. βチェックリストを開く。
+
+確認すること:
+
+- マーチャントは見積依頼に気づくための通知先を設定できる。
+- 何を確認すれば無料βを開始できるかが分かる。
+
+### 0:45-1:15 Storefrontから見積依頼
 
 操作:
 
@@ -44,23 +62,27 @@ B2B Quote Flow JPは、商品ページから法人見積依頼を受け付け、
 確認すること:
 
 - storefront上に「見積依頼を受け付けました。」が表示される。
+- 通知設定がある場合はmerchant notificationが試行され、結果がイベントログに残る。
 - B2B購入者はcartやcheckoutへ進まずに、法人見積依頼を送れる。
 
-### 0:55-1:30 Adminで依頼確認
+### 1:15-1:50 Adminで依頼確認
 
 操作:
 
 1. Shopify Admin appのquote listを開く。
 2. 送信したquoteが一覧に出ていることを見せる。
-3. quote detailを開く。
+3. Recent eventsを見せる。
+4. quote detailを開く。
 
 確認すること:
 
 - company、contact、email、product、variant、quantityが見える。
 - 請求書払い相談、稟議PDF希望、備考が見える。
+- 通知送信/skipped/failedやquote作成イベントが残る。
+- status/internal noteで営業対応メモを残せる。
 - マーチャントが商品ページから届いた依頼をAdmin内で確認できる。
 
-### 1:30-2:20 Draft Order作成
+### 1:50-2:35 Draft Order作成
 
 操作:
 
@@ -75,7 +97,7 @@ B2B Quote Flow JPは、商品ページから法人見積依頼を受け付け、
 - 商品、variant、数量、顧客メール、note、customAttributesが確認対象になる。
 - 作成後は再作成ボタンが出ず、二重作成を防止できる。
 
-### 2:20-3:00 制限とヒアリングへの接続
+### 2:35-3:00 制限とヒアリングへの接続
 
 説明すること:
 
@@ -111,7 +133,8 @@ B2B Quote Flow JPは、商品ページから法人見積依頼を受け付け、
 - Draft Orderのline item、顧客メール、note、customAttributesの業務妥当性確認が完了していない。
 - Dawn以外のテーマや商品フォームでvariant追従が安定するか未確認。
 - email通知がなく、マーチャントが依頼に気づかない可能性がある。
-- quote status運用がまだ最小実装で、業務フローとしては粗い。
+- merchant email通知はプロバイダ設定がないとskippedになる。
+- quote status/internal noteは最小実装で、複数担当者や承認フローはない。
 - PDF生成、invoice送信、Draft Order completeは未実装。
 - BillingとApp Store listingが未整備。
 - Protected Customer Data利用説明を本番審査向けに整理する必要がある。

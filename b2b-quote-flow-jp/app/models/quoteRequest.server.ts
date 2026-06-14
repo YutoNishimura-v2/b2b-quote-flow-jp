@@ -10,6 +10,15 @@ export type QuoteStatus =
   | "WON"
   | "LOST";
 
+export const QUOTE_STATUSES: QuoteStatus[] = [
+  "NEW",
+  "REVIEWING",
+  "QUOTE_CREATED",
+  "SENT",
+  "WON",
+  "LOST",
+];
+
 export type QuoteRequestInput = {
   shop?: unknown;
   companyName?: unknown;
@@ -88,6 +97,13 @@ export function normalizeProductVariantGid(variantId: string) {
 
 function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function normalizeQuoteStatus(value: unknown) {
+  const status = text(value, 50);
+  return QUOTE_STATUSES.includes(status as QuoteStatus)
+    ? (status as QuoteStatus)
+    : "";
 }
 
 export function verifyAppProxySignature(url: URL) {
@@ -191,10 +207,72 @@ export function listQuoteRequests(shop: string) {
   });
 }
 
+export async function getQuoteStats(shop: string) {
+  const [total, newCount, draftOrderCreated] = await Promise.all([
+    prisma.quoteRequest.count({ where: { shop } }),
+    prisma.quoteRequest.count({ where: { shop, status: "NEW" } }),
+    prisma.quoteRequest.count({
+      where: {
+        shop,
+        draftOrderId: { not: null },
+      },
+    }),
+  ]);
+
+  return { total, newCount, draftOrderCreated };
+}
+
 export function getQuoteRequest(shop: string, id: string) {
   return prisma.quoteRequest.findFirst({
     where: { id, shop },
   });
+}
+
+export async function updateQuoteStatusAndInternalNote(
+  shop: string,
+  quoteRequestId: string,
+  input: {
+    status?: unknown;
+    internalNote?: unknown;
+  },
+) {
+  const status = normalizeQuoteStatus(input.status);
+  const internalNote = text(input.internalNote, MAX_NOTE_LENGTH);
+  const errors: Record<string, string> = {};
+
+  if (!status) {
+    errors.status = "有効なstatusを選択してください。";
+  }
+
+  const quote = await getQuoteRequest(shop, quoteRequestId);
+
+  if (!quote) {
+    errors.quote = "見積依頼が見つかりません。";
+  }
+
+  if (quote?.draftOrderId && status === "NEW") {
+    errors.status =
+      "Draft Order作成済みのquoteはNEWへ戻せません。SENT/WON/LOSTなどを選択してください。";
+  }
+
+  if (quote && !quote.draftOrderId && status === "QUOTE_CREATED") {
+    errors.status =
+      "Draft Order未作成のquoteはQUOTE_CREATEDへ変更できません。先にDraft Orderを作成してください。";
+  }
+
+  if (Object.keys(errors).length > 0 || !quote) {
+    return { ok: false as const, errors, quote };
+  }
+
+  const updatedQuote = await prisma.quoteRequest.update({
+    where: { id: quoteRequestId, shop },
+    data: {
+      status,
+      internalNote,
+    },
+  });
+
+  return { ok: true as const, quote: updatedQuote, previousQuote: quote };
 }
 
 export async function claimQuoteDraftOrderCreation(shop: string, quoteRequestId: string) {

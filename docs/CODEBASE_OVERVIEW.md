@@ -24,6 +24,11 @@ B2B Quote Flow JPは、Shopify storefrontの商品ページから法人向け見
 - Draft Order ID、Name、管理画面リンクをquote detailに表示できる。
 - `draftOrderId`保存済みquoteでは再作成ボタンを表示せず、二重作成を防ぐUIになっている。
 - `Admin認証だけ確認`診断ボタンはdev-only化されている。
+- β設定画面で通知先メールを保存できる。
+- quote作成時にmerchant email通知を試行し、結果をイベントログへ残せる。
+- quote detailでstatus/internal noteを更新できる。
+- Admin homeで最小利用状況とRecent eventsを確認できる。
+- 無料βチェックリスト画面で導入確認ができる。
 
 成功済みproofの詳細は以下を参照する。
 
@@ -38,6 +43,7 @@ B2B Quote Flow JPは、Shopify storefrontの商品ページから法人向け見
 │   ├── B2B_QUOTE_DAWN_PROOF_SUCCESS.md
 │   ├── B2B_QUOTE_DRAFT_ORDER_SUCCESS.md
 │   ├── B2B_QUOTE_DRAFT_ORDER_SPIKE.md
+│   ├── BETA_READINESS_PLAN.md
 │   └── CODEBASE_OVERVIEW.md
 └── b2b-quote-flow-jp/
     ├── app/
@@ -160,6 +166,13 @@ Prisma QuoteRequest create
 - Draft Order作成失敗時のstatus reset。
 - Draft Order保存失敗時のmarker保存。
 - Draft Order保存成功時の`QUOTE_CREATED`更新。
+- status/internal note更新。
+- quote件数とDraft Order作成件数の集計。
+
+β向けに追加された関連model:
+
+- `ShopSettings`: shop単位の通知先メールと通知ON/OFFを保存する。
+- `QuoteEvent`: quote作成、通知送信/skipped/failed、settings更新、Draft Order作成、status更新などの最小イベントログを保存する。
 
 ## 7. Admin list/detail routeの役割
 
@@ -177,6 +190,15 @@ quote list:
 
 `authenticate.admin(request)`から`session.shop`を取得し、`listQuoteRequests(session.shop)`でそのshopのquoteだけを表示する。表示項目はstatus、会社名、担当者、メール、商品、数量、作成日時、detailリンク。
 
+Admin homeではβ向けに以下も表示する。
+
+- quote総数。
+- NEW件数。
+- Draft Order作成済み件数。
+- 通知設定状態。
+- Recent events。
+- β設定画面とβチェックリストへのリンク。
+
 quote detail:
 
 - `b2b-quote-flow-jp/app/routes/app.quotes.$id.tsx`
@@ -188,8 +210,21 @@ detail routeの責務:
 - Draft Order作成ボタンを表示する。
 - Draft Order作成済みならID、Name、status、管理画面リンクを表示する。
 - Draft Order作成済みquoteでは再作成ボタンを表示しない。
+- status/internal noteを更新する。
 - dev環境だけ`Admin認証だけ確認`診断ボタンを表示する。
 - GraphQL / scope / protected customer data / validation / state / save failureを画面内に表示する。
+
+β設定:
+
+- `b2b-quote-flow-jp/app/routes/app.settings.tsx`
+
+通知先メール、見積依頼メール通知ON/OFF、メール送信プロバイダ設定状態、Theme blockのボタン文言設定場所、Protected Customer Data注意事項を表示する。
+
+βチェックリスト:
+
+- `b2b-quote-flow-jp/app/routes/app.beta.tsx`
+
+通知設定、テストquote、Draft Order作成、Draft Order実体確認、Protected Customer Data再確認などの無料β導入チェックを表示する。
 
 Draft Order resource route:
 
@@ -244,6 +279,8 @@ draftOrderId/name/adminUrl/createdAt保存
 - tags
 - customAttributes
 
+note/customAttributesには、quote ID、status、会社名、担当者、商品、variant、数量、請求書払い相談、稟議PDF希望、顧客備考などを入れる。Shopify Admin > 注文管理 > 下書きで、quoteとDraft Orderの対応を確認しやすくするため。
+
 二重作成防止:
 
 - `draftOrderId`が既にあるquoteはactionで作成しない。
@@ -275,11 +312,16 @@ Draft Order作成には`write_draft_orders` scopeだけでは足りない。
 | `b2b-quote-flow-jp/app/shopify.server.ts` | Shopify app SDK初期化、Admin認証、session storage設定。 |
 | `b2b-quote-flow-jp/app/db.server.ts` | PrismaClient singleton。dev環境ではglobalに保持。 |
 | `b2b-quote-flow-jp/prisma/schema.prisma` | `Session`と`QuoteRequest`のDB schema。現在はSQLite dev DB。 |
+| `b2b-quote-flow-jp/app/models/shopSettings.server.ts` | shop単位の通知設定保存、通知先メールvalidation。 |
+| `b2b-quote-flow-jp/app/models/quoteEvent.server.ts` | quote作成、通知、Draft Order、設定更新などの最小イベントログ。 |
+| `b2b-quote-flow-jp/app/models/merchantNotification.server.ts` | quote作成時のmerchant email通知送信。プロバイダ未設定時はskipped扱い。 |
 | `b2b-quote-flow-jp/app/models/quoteRequest.server.ts` | QuoteRequestのvalidation、保存、取得、Draft Order state更新、App Proxy signature検証。 |
 | `b2b-quote-flow-jp/app/models/draftOrder.server.ts` | Shopify Admin GraphQL `draftOrderCreate`実行、Draft Order note/customAttributes/admin URL生成。 |
 | `b2b-quote-flow-jp/app/routes/app.tsx` | Admin embedded app shell、Admin auth、AppProvider、共通ErrorBoundary。 |
-| `b2b-quote-flow-jp/app/routes/app._index.tsx` | Admin quote list。shop別quote一覧を表示。 |
-| `b2b-quote-flow-jp/app/routes/app.quotes.$id.tsx` | Admin quote detail、Draft Order作成action、診断UI、作成済み表示。 |
+| `b2b-quote-flow-jp/app/routes/app._index.tsx` | Admin quote list、β readiness、Recent events表示。 |
+| `b2b-quote-flow-jp/app/routes/app.settings.tsx` | β設定。通知先メール、通知ON/OFF、データ利用説明。 |
+| `b2b-quote-flow-jp/app/routes/app.beta.tsx` | 無料βチェックリスト。 |
+| `b2b-quote-flow-jp/app/routes/app.quotes.$id.tsx` | Admin quote detail、status/internal note更新、Draft Order作成action、診断UI、作成済み表示。 |
 | `b2b-quote-flow-jp/app/routes/app.quotes.$id.draft-order.tsx` | Draft Order作成resource route。detail actionを再export。 |
 | `b2b-quote-flow-jp/app/routes/api.b2b-quote.requests.tsx` | Storefront/App Proxy POST入口の実装。quote requestを保存。 |
 | `b2b-quote-flow-jp/app/routes/apps.b2b-quote.api.b2b-quote.requests.tsx` | App Proxy path用route。API routeを再export。 |
@@ -290,6 +332,8 @@ Draft Order作成には`write_draft_orders` scopeだけでは足りない。
 | `docs/B2B_QUOTE_DAWN_PROOF_SUCCESS.md` | Dawn商品ページからquote保存までの成功記録。 |
 | `docs/B2B_QUOTE_DRAFT_ORDER_SUCCESS.md` | Draft Order作成成功、Protected Customer Data、実体確認チェックリスト。 |
 | `docs/B2B_QUOTE_DRAFT_ORDER_SPIKE.md` | Draft Order実装中の調査ログ、Bad Request回避、GraphQL error整理。 |
+| `docs/BETA_READINESS_PLAN.md` | 無料βに向けた疑似ユーザーレビュー、P0/P1、成功/失敗指標。 |
+| `docs/MVP_DEMO_SCRIPT.md` | 3分デモ手順、価値仮説、ユーザーテスト質問。 |
 
 ## 11. dev storeでの確認手順
 
@@ -323,19 +367,25 @@ Draft Order作成には`write_draft_orders` scopeだけでは足りない。
 
 6. Admin appの`/app`を開き、NEW quote listに保存済みquoteが出ることを確認する。
 
-7. quote detailを開き、商品、variant、数量、メール、備考がstorefront入力と一致することを確認する。
+7. `/app/settings`で通知先メールと通知ON/OFFを設定する。メール送信プロバイダ未設定時は通知がskippedとしてイベントログに残る。
 
-8. Draft Order作成前に、dev環境では必要なら`Admin認証だけ確認`を押してAdmin authとsession scopeを確認する。
+8. quote detailを開き、商品、variant、数量、メール、備考がstorefront入力と一致することを確認する。
 
-9. `Draft Orderを作成`を押し、「Draft Orderを作成しました。」が表示されることを確認する。
+9. status/internal noteを更新し、Recent eventsに残ることを確認する。
 
-10. quote detailでDraft Order ID、Name、管理画面リンク、`QUOTE_CREATED` statusが表示されることを確認する。
+10. Draft Order作成前に、dev環境では必要なら`Admin認証だけ確認`を押してAdmin authとsession scopeを確認する。
 
-11. Shopify Admin > 注文管理 > 下書き でDraft Order実体を確認する。
+11. `Draft Orderを作成`を押し、「Draft Orderを作成しました。」が表示されることを確認する。
 
-12. Draft Orderの商品、variant、数量、顧客メール、note、customAttributesがquoteと一致することを確認する。
+12. quote detailでDraft Order ID、Name、管理画面リンク、`QUOTE_CREATED` statusが表示されることを確認する。
 
-13. 同じquote detailを再表示し、再作成ボタンが表示されないことを確認する。
+13. Shopify Admin > 注文管理 > 下書き でDraft Order実体を確認する。
+
+14. Draft Orderの商品、variant、数量、顧客メール、note、customAttributesがquoteと一致することを確認する。
+
+15. 同じquote detailを再表示し、再作成ボタンが表示されないことを確認する。
+
+16. `/app/beta`の無料βチェックリストを確認する。
 
 ## 12. 既知の未完成項目
 

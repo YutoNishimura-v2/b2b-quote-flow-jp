@@ -60,3 +60,24 @@ model QuoteRequest {
 
   @@index([shop, status, createdAt])
 }
+
+model ShopSettings {
+  shop                            String   @id
+  notificationEmail               String?
+  quoteEmailNotificationsEnabled  Boolean  @default(false)
+  createdAt                       DateTime @default(now())
+  updatedAt                       DateTime @updatedAt
+}
+
+model QuoteEvent {
+  id              String   @id @default(cuid())
+  shop            String
+  quoteRequestId  String?
+  type            String
+  message         String
+  metadata        String   @default("")
+  createdAt       DateTime @default(now())
+
+  @@index([shop, createdAt])
+  @@index([quoteRequestId, createdAt])
+}
