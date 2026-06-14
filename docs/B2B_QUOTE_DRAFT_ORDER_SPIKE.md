@@ -298,6 +298,26 @@ intent=debug-admin-auth
 - raw headers
 - full request body
 
+### 0.3 action後revalidationのBad Request対策
+
+親route loaderのBad Request対策後も、Draft Order作成POSTの直後に同じBad Request ErrorBoundaryが出るケースが残った。
+
+追加原因候補:
+
+- React Routerはaction完了後に親子route loaderをrevalidateする。
+- Draft Order action自体がActionDataを返していても、その後の親/子loader revalidationで `authenticate.admin(request)` がBad Requestを投げると、画面内のactionDataではなくErrorBoundaryへ落ちる。
+
+修正内容:
+
+- `app/routes/app.tsx` と `app/routes/app.quotes.$id.tsx` に `shouldRevalidate` を追加。
+- `intent=create-draft-order` と `intent=debug-admin-auth` のPOST後はloader revalidationを止める。
+- Draft Order作成や診断の結果は、まずactionDataとしてdetail画面内に表示する。
+
+注意:
+
+- Draft Order作成成功後のDraft Order ID/Name表示は、画面再読み込み後にDB保存済み情報として表示される。
+- これはBad Request原因切り分けを優先するためのspike対応。
+
 ## 8. 未実装
 
 今回のスパイクでは以下は実装していない。

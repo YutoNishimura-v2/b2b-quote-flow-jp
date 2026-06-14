@@ -1,4 +1,8 @@
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import type {
+  ActionFunctionArgs,
+  LoaderFunctionArgs,
+  ShouldRevalidateFunctionArgs,
+} from "react-router";
 import {
   Form,
   Link,
@@ -197,6 +201,19 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       },
     } satisfies LoaderData;
   }
+};
+
+export const shouldRevalidate = ({
+  formData,
+  defaultShouldRevalidate,
+}: ShouldRevalidateFunctionArgs) => {
+  const intent = String(formData?.get("intent") || "");
+
+  if (intent === "create-draft-order" || intent === "debug-admin-auth") {
+    return false;
+  }
+
+  return defaultShouldRevalidate;
 };
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
