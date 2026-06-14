@@ -7,16 +7,25 @@ import {
   useNavigation,
   useRouteError,
 } from "react-router";
-import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { createDraftOrderForQuote } from "../models/draftOrder.server";
 import {
   claimQuoteDraftOrderCreation,
   getQuoteRequest,
+  normalizeProductVariantGid,
   resetQuoteDraftOrderCreation,
   saveQuoteDraftOrder,
 } from "../models/quoteRequest.server";
 import { authenticate } from "../shopify.server";
+
+type ActionErrorType =
+  | "auth"
+  | "validation"
+  | "graphql_user_error"
+  | "graphql_error"
+  | "api_error"
+  | "state"
+  | "save_error";
 
 type ActionData =
   | {
@@ -25,8 +34,42 @@ type ActionData =
     }
   | {
       ok: false;
-      errors: string[];
+      errors: Array<{
+        type: ActionErrorType;
+        message: string;
+        field?: string;
+      }>;
     };
+
+function actionFailure(
+  type: ActionErrorType,
+  message: string,
+  field?: string,
+): ActionData {
+  return {
+    ok: false,
+    errors: [{ type, message, field }],
+  };
+}
+
+function logDraftOrderAction(
+  event: string,
+  details: Record<string, unknown>,
+) {
+  console.info(`b2b_quote_draft_order_${event}`, details);
+}
+
+async function resetDraftOrderClaim(shop: string, quoteRequestId: string) {
+  try {
+    await resetQuoteDraftOrderCreation(shop, quoteRequestId);
+  } catch (error) {
+    console.error("b2b_quote_draft_order_reset_error", {
+      shop,
+      quoteRequestId,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+}
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -40,11 +83,76 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
-  const { admin, session } = await authenticate.admin(request);
-  const quote = await getQuoteRequest(session.shop, params.id || "");
+  let auth: Awaited<ReturnType<typeof authenticate.admin>>;
+
+  try {
+    auth = await authenticate.admin(request);
+  } catch (error) {
+    if (
+      error instanceof Response &&
+      error.status >= 300 &&
+      error.status < 400
+    ) {
+      throw error;
+    }
+
+    console.error("b2b_quote_draft_order_auth_error", {
+      quoteRequestId: params.id || "",
+      error:
+        error instanceof Response
+          ? `Response ${error.status}`
+          : error instanceof Error
+            ? error.message
+            : "Unknown error",
+    });
+
+    return actionFailure(
+      "auth",
+      "Shopify Admin認証に失敗しました。アプリを再読み込みし、権限更新または再インストールが必要か確認してください。",
+    );
+  }
+
+  const { admin, session } = auth;
+  let quote: Awaited<ReturnType<typeof getQuoteRequest>>;
+
+  try {
+    quote = await getQuoteRequest(session.shop, params.id || "");
+  } catch (error) {
+    console.error("b2b_quote_draft_order_quote_lookup_error", {
+      shop: session.shop,
+      quoteRequestId: params.id || "",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+
+    return actionFailure(
+      "state",
+      "見積依頼の取得に失敗しました。画面を再読み込みして再試行してください。",
+    );
+  }
 
   if (!quote) {
-    throw new Response("Not found", { status: 404 });
+    return actionFailure(
+      "state",
+      "見積依頼が見つかりません。shopまたはquote IDを確認してください。",
+    );
+  }
+
+  const formData = await request.formData();
+  const intent = String(formData.get("intent") || "");
+  const normalizedVariantId = normalizeProductVariantGid(quote.variantId);
+
+  logDraftOrderAction("action_received", {
+    shop: session.shop,
+    quoteRequestId: quote.id,
+    intent,
+    quoteStatus: quote.status,
+    hasDraftOrderId: Boolean(quote.draftOrderId),
+    variantIdIsGid: Boolean(normalizedVariantId),
+    quantity: quote.quantity,
+  });
+
+  if (intent !== "create-draft-order") {
+    return actionFailure("validation", "不明な操作です。画面を再読み込みして再試行してください。");
   }
 
   if (quote.draftOrderId) {
@@ -55,26 +163,57 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   }
 
   if (quote.status !== "NEW") {
-    return {
-      ok: false,
-      errors: ["Draft OrderはNEW statusのquoteからのみ作成できます。画面を再読み込みして状態を確認してください。"],
-    } satisfies ActionData;
+    return actionFailure(
+      "state",
+      "Draft OrderはNEW statusのquoteからのみ作成できます。画面を再読み込みして状態を確認してください。",
+    );
   }
 
-  const claimed = await claimQuoteDraftOrderCreation(session.shop, quote.id);
+  let claimed = false;
+
+  try {
+    claimed = await claimQuoteDraftOrderCreation(session.shop, quote.id);
+  } catch (error) {
+    console.error("b2b_quote_draft_order_claim_error", {
+      shop: session.shop,
+      quoteRequestId: quote.id,
+      quoteStatus: quote.status,
+      hasDraftOrderId: Boolean(quote.draftOrderId),
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+
+    return actionFailure(
+      "state",
+      "Draft Order作成の開始状態を保存できませんでした。画面を再読み込みして再試行してください。",
+    );
+  }
 
   if (!claimed) {
-    return {
-      ok: false,
-      errors: ["Draft Orderは既に作成済み、または作成処理中です。画面を再読み込みして状態を確認してください。"],
-    } satisfies ActionData;
+    return actionFailure(
+      "state",
+      "Draft Orderは既に作成済み、または作成処理中です。画面を再読み込みして状態を確認してください。",
+    );
   }
 
   try {
     const result = await createDraftOrderForQuote(admin.graphql, quote);
 
     if (!result.ok) {
-      await resetQuoteDraftOrderCreation(session.shop, quote.id);
+      await resetDraftOrderClaim(session.shop, quote.id);
+
+      logDraftOrderAction("graphql_failed", {
+        shop: session.shop,
+        quoteRequestId: quote.id,
+        quoteStatus: quote.status,
+        hasDraftOrderId: false,
+        variantIdIsGid: Boolean(normalizedVariantId),
+        quantity: quote.quantity,
+        errors: result.errors.map((error) => ({
+          type: error.type,
+          field: error.field,
+          message: error.message,
+        })),
+      });
 
       return {
         ok: false,
@@ -94,7 +233,13 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 
       return {
         ok: false,
-        errors: ["Draft Orderは作成された可能性がありますが、quoteへの保存に失敗しました。Shopify AdminのDraftsを確認してから再試行してください。"],
+        errors: [
+          {
+            type: "save_error",
+            message:
+              "Draft Orderは作成された可能性がありますが、quoteへの保存に失敗しました。Shopify AdminのDraftsを確認してから再試行してください。",
+          },
+        ],
       } satisfies ActionData;
     }
 
@@ -103,18 +248,22 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       message: "Draft Orderを作成しました。",
     } satisfies ActionData;
   } catch (error) {
-    await resetQuoteDraftOrderCreation(session.shop, quote.id);
+    await resetDraftOrderClaim(session.shop, quote.id);
 
     console.error("b2b_quote_draft_order_create_error", {
       shop: session.shop,
       quoteRequestId: quote.id,
+      quoteStatus: quote.status,
+      hasDraftOrderId: false,
+      variantIdIsGid: Boolean(normalizedVariantId),
+      quantity: quote.quantity,
       error: error instanceof Error ? error.message : "Unknown error",
     });
 
-    return {
-      ok: false,
-      errors: ["Draft Orderを作成できませんでした。Shopify Admin APIの権限と入力内容を確認してください。"],
-    } satisfies ActionData;
+    return actionFailure(
+      "api_error",
+      "Draft Orderを作成できませんでした。Shopify Admin APIの権限更新、variant、数量、ネットワーク状態を確認してください。",
+    );
   }
 };
 
@@ -167,6 +316,11 @@ export default function QuoteDetail() {
             <>
               {quote.status === "NEW" ? (
                 <Form method="post">
+                  <input
+                    type="hidden"
+                    name="intent"
+                    value="create-draft-order"
+                  />
                   <button type="submit" disabled={isSubmitting}>
                     {isSubmitting ? "作成中..." : "Draft Orderを作成"}
                   </button>
@@ -184,7 +338,10 @@ export default function QuoteDetail() {
           {actionData && !actionData.ok ? (
             <div>
               {actionData.errors.map((error) => (
-                <s-paragraph key={error}>{error}</s-paragraph>
+                <s-paragraph key={`${error.type}:${error.field || ""}:${error.message}`}>
+                  [{error.type}]
+                  {error.field ? ` ${error.field}:` : ""} {error.message}
+                </s-paragraph>
               ))}
             </div>
           ) : null}
@@ -195,5 +352,27 @@ export default function QuoteDetail() {
 }
 
 export function ErrorBoundary() {
-  return boundary.error(useRouteError());
+  const error = useRouteError();
+  const message =
+    error instanceof Error
+      ? error.message
+      : error instanceof Response
+        ? `Response ${error.status}`
+        : "Unknown error";
+
+  console.error("b2b_quote_detail_route_error", { message });
+
+  return (
+    <s-page heading="見積依頼詳細">
+      <s-link href="/app">一覧へ戻る</s-link>
+      <s-section heading="エラー">
+        <s-stack direction="block" gap="base">
+          <s-paragraph>
+            見積依頼詳細を表示できませんでした。画面を再読み込みするか、一覧へ戻って再度開いてください。
+          </s-paragraph>
+          <s-paragraph>{message}</s-paragraph>
+        </s-stack>
+      </s-section>
+    </s-page>
+  );
 }

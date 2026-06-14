@@ -2,6 +2,41 @@
 
 Last updated: 2026-06-14
 
+## 0. Application Error対応
+
+Draft Order作成ボタン押下時に、Shopify Admin内のquote detail画面で以下が表示された。
+
+```text
+Application Error
+Error: Bad Request
+React Router singleFetchAction / handleSingleFetchRequest / requestHandler
+```
+
+推定原因:
+
+- POST action内の `authenticate.admin(request)` またはShopify Admin GraphQL呼び出しが `Bad Request` Response/例外を投げ、route全体のErrorBoundaryまで到達していた。
+- actionが失敗理由をActionDataとして返す前に落ちていたため、quote detail画面上に原因を表示できなかった。
+
+修正内容:
+
+- Draft Order作成Formに `intent=create-draft-order` を追加。
+- actionでintentを検証し、不明なPOSTを画面エラーとして返す。
+- `authenticate.admin(request)` の失敗をcatchし、redirect以外は画面エラーとして返す。
+- quote lookup / claim / GraphQL / DB保存失敗を分類してActionDataで返す。
+- GraphQL `userErrors` / top-level `errors` / validation / auth / api / save error を画面上に表示する。
+- 想定外のroute error用にcustom `ErrorBoundary` を追加し、少なくとも「一覧へ戻る」を表示する。
+- safe logを追加し、shop、quoteRequestId、intent、status、hasDraftOrderId、variantId形式、quantity、GraphQL error message/fieldだけを出す。
+
+ログに出さないもの:
+
+- access token
+- Shopify API secret
+- session token
+- raw headers
+- cookie
+- full request body
+- customer note全文
+
 ## 1. 実装した内容
 
 quote detail画面からShopify Admin APIの `draftOrderCreate` を呼び、Draft Orderを1件作成する小スパイクを追加した。
@@ -133,6 +168,11 @@ normalizeProductVariantGid
 失敗時:
 
 - Shopify GraphQL `userErrors` またはtop-level `errors` が画面に表示される。
+- Admin auth failureは `auth` として画面に表示される。
+- variant/quantity/intent failureは `validation` として画面に表示される。
+- quote state conflictは `state` として画面に表示される。
+- network/API exceptionは `api_error` として画面に表示される。
+- Draft Order作成後にDB保存だけ失敗した可能性がある場合は `save_error` として画面に表示される。
 - 例外時は汎用エラーが表示される。
 - サーバログにはshop、quoteRequestId、error messageのみ出す。
 - access tokenやsecretはログに出さない。
@@ -145,6 +185,19 @@ normalizeProductVariantGid
 - variant IDが存在しない、または対象shopの商品variantではない。
 - quoteのemailやquantityがShopify Draft Order inputとして不正。
 - アプリのAdmin API sessionが失効している。
+
+権限未承認時の対処:
+
+1. `shopify app dev --reset --store b2b-quote-flow-test.myshopify.com` を再起動する。
+2. `write_draft_orders` の権限更新画面が出たら承認する。
+3. 承認後、quote detailを再読み込みして `Draft Orderを作成` を再実行する。
+4. それでも `auth` または `graphql_error` が出る場合は、アプリがdev storeに再インストールされているか確認する。
+
+retry可能性:
+
+- `draftOrderId` が保存されていない失敗は、基本的に `REVIEWING -> NEW` に戻して再試行可能にする。
+- GraphQL `userErrors`、top-level `errors`、validation error、network/API exceptionでは再試行可能。
+- Draft Order作成成功後にDB保存だけ失敗した可能性がある場合は、二重作成回避のためNEWへ戻さず、Shopify Admin > Orders > Draftsを確認してから対応する。
 
 ## 8. 未実装
 

@@ -34,7 +34,11 @@ export type DraftOrderCreateResult =
     }
   | {
       ok: false;
-      errors: string[];
+      errors: Array<{
+        type: "validation" | "graphql_user_error" | "graphql_error" | "api_error";
+        message: string;
+        field?: string;
+      }>;
     };
 
 const DRAFT_ORDER_CREATE_MUTATION = `#graphql
@@ -87,14 +91,26 @@ export async function createDraftOrderForQuote(
   if (!variantGid) {
     return {
       ok: false,
-      errors: ["variantId must be a numeric ID or ProductVariant GID"],
+      errors: [
+        {
+          type: "validation",
+          message: "variantId must be a numeric ID or ProductVariant GID",
+          field: "variantId",
+        },
+      ],
     };
   }
 
   if (!Number.isInteger(quote.quantity) || quote.quantity < 1) {
     return {
       ok: false,
-      errors: ["quantity must be an integer greater than or equal to 1"],
+      errors: [
+        {
+          type: "validation",
+          message: "quantity must be an integer greater than or equal to 1",
+          field: "quantity",
+        },
+      ],
     };
   }
 
@@ -127,7 +143,10 @@ export async function createDraftOrderForQuote(
   if (body.errors?.length) {
     return {
       ok: false,
-      errors: body.errors.map((error) => error.message),
+      errors: body.errors.map((error) => ({
+        type: "graphql_error",
+        message: error.message,
+      })),
     };
   }
 
@@ -137,14 +156,23 @@ export async function createDraftOrderForQuote(
   if (userErrors.length > 0) {
     return {
       ok: false,
-      errors: userErrors.map((error) => error.message),
+      errors: userErrors.map((error) => ({
+        type: "graphql_user_error",
+        message: error.message,
+        field: error.field?.join("."),
+      })),
     };
   }
 
   if (!payload?.draftOrder) {
     return {
       ok: false,
-      errors: ["Shopify did not return a draft order"],
+      errors: [
+        {
+          type: "api_error",
+          message: "Shopify did not return a draft order",
+        },
+      ],
     };
   }
 
