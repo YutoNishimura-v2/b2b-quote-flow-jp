@@ -4,13 +4,11 @@ import type {
   ShouldRevalidateFunctionArgs,
 } from "react-router";
 import {
-  Form,
   Link,
-  useActionData,
   useLoaderData,
-  useNavigation,
   useRouteError,
 } from "react-router";
+import { useState } from "react";
 
 import { createDraftOrderForQuote } from "../models/draftOrder.server";
 import {
@@ -109,6 +107,25 @@ function actionFailure(
     ok: false,
     errors: [{ type, message, field }],
   };
+}
+
+function jsonAction(data: ActionData) {
+  return Response.json(data, { status: 200 });
+}
+
+function jsonActionFailure(
+  type: ActionErrorType,
+  message: string,
+  field?: string,
+) {
+  return jsonAction(actionFailure(type, message, field));
+}
+
+function jsonActionSuccess(
+  message: string,
+  details?: Array<{ label: string; value: string }>,
+) {
+  return jsonAction({ ok: true, message, details });
 }
 
 function logDraftOrderAction(
@@ -230,7 +247,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       error: describeCaughtError(error),
     });
 
-    return actionFailure(
+    return jsonActionFailure(
       "validation",
       "操作内容を読み取れませんでした。画面を再読み込みして再試行してください。",
     );
@@ -272,7 +289,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       error: safeError,
     });
 
-    return actionFailure(
+    return jsonActionFailure(
       "auth",
       `Shopify Admin認証に失敗しました。アプリを再読み込みし、権限更新または再インストールが必要か確認してください。${safeError.status ? ` (${safeError.status} ${safeError.statusText || ""})` : ""}`,
     );
@@ -317,27 +334,23 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       };
 
       if (body.errors?.length) {
-        return {
+        return jsonAction({
           ok: false,
           errors: body.errors.map((error) => ({
             type: isScopeLikeError(error.message) ? "scope" : "graphql_error",
             message: error.message,
             field: undefined,
           })),
-        } satisfies ActionData;
+        });
       }
 
-      return {
-        ok: true,
-        message: "[debug] Admin auth OK",
-        details: [
+      return jsonActionSuccess("[debug] Admin auth OK", [
           { label: "shop", value: session.shop },
           {
             label: "myshopifyDomain",
             value: body.data?.shop?.myshopifyDomain || "-",
           },
-        ],
-      } satisfies ActionData;
+        ]);
     } catch (error) {
       if (shouldRethrowShopifyResponse(error)) {
         throw error;
@@ -354,7 +367,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         error: safeError,
       });
 
-      return actionFailure(
+      return jsonActionFailure(
         safeError.status === 401 || safeError.status === 403 ? "scope" : "auth",
         `[auth] Admin auth failed${safeError.status ? ` (${safeError.status} ${safeError.statusText || ""})` : ""}${safeError.message ? `: ${safeError.message}` : ""}`,
       );
@@ -383,7 +396,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       error: describeCaughtError(error),
     });
 
-    return actionFailure(
+    return jsonActionFailure(
       "state",
       "見積依頼の取得に失敗しました。画面を再読み込みして再試行してください。",
     );
@@ -399,7 +412,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       quoteFound: false,
     });
 
-    return actionFailure(
+    return jsonActionFailure(
       "state",
       "見積依頼が見つかりません。shopまたはquote IDを確認してください。",
     );
@@ -421,14 +434,11 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   });
 
   if (intent !== "create-draft-order") {
-    return actionFailure("validation", "不明な操作です。画面を再読み込みして再試行してください。");
+    return jsonActionFailure("validation", "不明な操作です。画面を再読み込みして再試行してください。");
   }
 
   if (quote.draftOrderId) {
-    return {
-      ok: true,
-      message: "Draft Orderは既に作成済みです。",
-    } satisfies ActionData;
+    return jsonActionSuccess("Draft Orderは既に作成済みです。");
   }
 
   if (
@@ -436,7 +446,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     !quote.draftOrderId &&
     hasSaveFailureMarker
   ) {
-    return actionFailure(
+    return jsonActionFailure(
       "save_error",
       "前回、Draft Order作成後にquoteへの保存だけ失敗した可能性があります。二重作成を避けるため、Shopify Admin > Orders > Draftsを確認してください。",
     );
@@ -446,7 +456,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     quote.status !== "NEW" &&
     !(quote.status === "REVIEWING" && !quote.draftOrderId)
   ) {
-    return actionFailure(
+    return jsonActionFailure(
       "state",
       "Draft OrderはNEW statusのquoteからのみ作成できます。画面を再読み込みして状態を確認してください。",
     );
@@ -503,7 +513,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         error: describeCaughtError(error),
       });
 
-      return actionFailure(
+      return jsonActionFailure(
         "state",
         "Draft Order作成の開始状態を保存できませんでした。画面を再読み込みして再試行してください。",
       );
@@ -511,7 +521,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   }
 
   if (!claimed) {
-    return actionFailure(
+    return jsonActionFailure(
       "state",
       "Draft Orderは既に作成済み、または作成処理中です。画面を再読み込みして状態を確認してください。",
     );
@@ -566,10 +576,10 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         })),
       });
 
-      return {
+      return jsonAction({
         ok: false,
         errors: actionErrors,
-      } satisfies ActionData;
+      });
     }
 
     try {
@@ -598,7 +608,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         result.draftOrder.id,
       );
 
-      return {
+      return jsonAction({
         ok: false,
         errors: [
           {
@@ -607,7 +617,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
               "Draft Orderは作成された可能性がありますが、quoteへの保存に失敗しました。Shopify AdminのDraftsを確認してから再試行してください。",
           },
         ],
-      } satisfies ActionData;
+      });
     }
 
     logDraftOrderAction("success", {
@@ -619,10 +629,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       draftOrderName: result.draftOrder.name,
     });
 
-    return {
-      ok: true,
-      message: "Draft Orderを作成しました。",
-    } satisfies ActionData;
+    return jsonActionSuccess("Draft Orderを作成しました。");
   } catch (error) {
     await resetDraftOrderClaim(session.shop, quote.id);
 
@@ -638,7 +645,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       error: describeCaughtError(error),
     });
 
-    return actionFailure(
+    return jsonActionFailure(
       "api_error",
       "Draft Orderを作成できませんでした。Shopify Admin APIの権限更新、variant、数量、ネットワーク状態を確認してください。",
     );
@@ -647,9 +654,70 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 
 export default function QuoteDetail() {
   const { quote, loaderError } = useLoaderData<typeof loader>();
-  const actionData = useActionData<typeof action>();
-  const navigation = useNavigation();
-  const isSubmitting = navigation.state === "submitting";
+  const [actionData, setActionData] = useState<ActionData | null>(null);
+  const [submittingIntent, setSubmittingIntent] = useState<string | null>(null);
+
+  async function submitAction(intent: "create-draft-order" | "debug-admin-auth") {
+    setSubmittingIntent(intent);
+    setActionData(null);
+
+    const formData = new FormData();
+    formData.set("intent", intent);
+
+    try {
+      const response = await fetch(window.location.href, {
+        method: "POST",
+        body: formData,
+        headers: {
+          Accept: "application/json",
+          "X-B2B-Quote-Action": "1",
+        },
+      });
+      const responseText = await response.text();
+
+      if (!responseText.trim()) {
+        setActionData({
+          ok: false,
+          errors: [
+            {
+              type: "api_error",
+              message: `空のレスポンスです。HTTP ${response.status} ${response.statusText}`,
+            },
+          ],
+        });
+        return;
+      }
+
+      try {
+        setActionData(JSON.parse(responseText) as ActionData);
+      } catch {
+        setActionData({
+          ok: false,
+          errors: [
+            {
+              type: "api_error",
+              message: `JSONとして読めないレスポンスです。HTTP ${response.status} ${response.statusText}: ${responseText.slice(0, 500)}`,
+            },
+          ],
+        });
+      }
+    } catch (error) {
+      setActionData({
+        ok: false,
+        errors: [
+          {
+            type: "api_error",
+            message:
+              error instanceof Error
+                ? `fetchに失敗しました: ${error.message}`
+                : "fetchに失敗しました。",
+          },
+        ],
+      });
+    } finally {
+      setSubmittingIntent(null);
+    }
+  }
 
   if (loaderError || !quote) {
     return (
@@ -716,16 +784,17 @@ export default function QuoteDetail() {
               (quote.status === "REVIEWING" &&
                 !quote.draftOrderId &&
                 !hasDraftOrderSaveFailureMarker(quote.internalNote)) ? (
-                <Form method="post">
-                  <input
-                    type="hidden"
-                    name="intent"
-                    value="create-draft-order"
-                  />
-                  <button type="submit" disabled={isSubmitting}>
-                    {isSubmitting ? "作成中..." : "Draft Orderを作成"}
+                <div>
+                  <button
+                    type="button"
+                    disabled={Boolean(submittingIntent)}
+                    onClick={() => submitAction("create-draft-order")}
+                  >
+                    {submittingIntent === "create-draft-order"
+                      ? "作成中..."
+                      : "Draft Orderを作成"}
                   </button>
-                </Form>
+                </div>
               ) : (
                 <s-paragraph>
                   {quote.status === "REVIEWING" && !quote.draftOrderId
@@ -735,12 +804,17 @@ export default function QuoteDetail() {
               )}
             </>
           )}
-          <Form method="post">
-            <input type="hidden" name="intent" value="debug-admin-auth" />
-            <button type="submit" disabled={isSubmitting}>
-              Admin認証だけ確認
+          <div>
+            <button
+              type="button"
+              disabled={Boolean(submittingIntent)}
+              onClick={() => submitAction("debug-admin-auth")}
+            >
+              {submittingIntent === "debug-admin-auth"
+                ? "確認中..."
+                : "Admin認証だけ確認"}
             </button>
-          </Form>
+          </div>
           {actionData?.ok ? (
             <div>
               <s-paragraph>{actionData.message}</s-paragraph>

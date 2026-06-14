@@ -318,6 +318,23 @@ intent=debug-admin-auth
 - Draft Order作成成功後のDraft Order ID/Name表示は、画面再読み込み後にDB保存済み情報として表示される。
 - これはBad Request原因切り分けを優先するためのspike対応。
 
+### 0.4 React Router Form経路の切り離し
+
+`shouldRevalidate` 追加後も同じBad Request ErrorBoundaryに落ちる状態が続いたため、Draft Order spikeの送信経路をReact Router `<Form>` / `useActionData` からブラウザ `fetch` に切り替えた。
+
+目的:
+
+- React Router singleFetch / navigation error boundary経路を避ける。
+- HTTP 400、HTML、空body、JSON parse失敗でもquote detail画面内に表示する。
+- actionはDraft Order/診断POSTに対してHTTP 200 JSONを返す。
+
+画面表示方針:
+
+- JSON成功時は従来通り `[debug]` または成功メッセージを表示する。
+- JSONの分類エラーは `[auth]`、`[scope]`、`[validation]`、`[graphql_user_error]`、`[graphql_error]`、`[api_error]`、`[save_error]` として表示する。
+- JSONではないレスポンスは `[api_error] JSONとして読めないレスポンスです。HTTP <status> ...` として先頭500文字だけ表示する。
+- 空bodyは `[api_error] 空のレスポンスです。HTTP <status> ...` として表示する。
+
 ## 8. 未実装
 
 今回のスパイクでは以下は実装していない。
