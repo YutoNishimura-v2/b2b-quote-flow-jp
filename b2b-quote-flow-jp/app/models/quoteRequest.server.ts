@@ -29,6 +29,7 @@ export type QuoteRequestInput = {
 
 const MAX_TEXT_LENGTH = 500;
 const MAX_NOTE_LENGTH = 2000;
+const DRAFT_ORDER_SAVE_FAILURE_NOTE = "[draft_order_save_error]";
 
 function text(value: unknown, maxLength = MAX_TEXT_LENGTH) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
@@ -224,6 +225,28 @@ export function resetQuoteDraftOrderCreation(shop: string, quoteRequestId: strin
       status: "NEW",
     },
   });
+}
+
+export function markQuoteDraftOrderSaveFailure(
+  shop: string,
+  quoteRequestId: string,
+  draftOrderId: string,
+) {
+  return prisma.quoteRequest.updateMany({
+    where: {
+      id: quoteRequestId,
+      shop,
+      draftOrderId: null,
+      status: "REVIEWING",
+    },
+    data: {
+      internalNote: `${DRAFT_ORDER_SAVE_FAILURE_NOTE} draftOrderId=${draftOrderId}`,
+    },
+  });
+}
+
+export function hasDraftOrderSaveFailureMarker(internalNote: string) {
+  return internalNote.includes(DRAFT_ORDER_SAVE_FAILURE_NOTE);
 }
 
 export function saveQuoteDraftOrder(

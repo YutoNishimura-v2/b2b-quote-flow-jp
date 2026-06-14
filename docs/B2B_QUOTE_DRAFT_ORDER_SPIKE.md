@@ -21,7 +21,9 @@ React Router singleFetchAction / handleSingleFetchRequest / requestHandler
 
 - Draft Order作成Formに `intent=create-draft-order` を追加。
 - actionでintentを検証し、不明なPOSTを画面エラーとして返す。
+- actionでは `request.clone().formData()` でintentを先に読み、元requestはShopify Admin認証へ渡す。
 - `authenticate.admin(request)` の失敗をcatchし、redirect以外は画面エラーとして返す。
+- action後のloader再実行で `authenticate.admin(request)` がBad Requestを投げても、redirect以外はloader dataとして返して画面内に表示する。
 - quote lookup / claim / GraphQL / DB保存失敗を分類してActionDataで返す。
 - GraphQL `userErrors` / top-level `errors` / validation / auth / api / save error を画面上に表示する。
 - 想定外のroute error用にcustom `ErrorBoundary` を追加し、少なくとも「一覧へ戻る」を表示する。
@@ -197,7 +199,20 @@ retry可能性:
 
 - `draftOrderId` が保存されていない失敗は、基本的に `REVIEWING -> NEW` に戻して再試行可能にする。
 - GraphQL `userErrors`、top-level `errors`、validation error、network/API exceptionでは再試行可能。
-- Draft Order作成成功後にDB保存だけ失敗した可能性がある場合は、二重作成回避のためNEWへ戻さず、Shopify Admin > Orders > Draftsを確認してから対応する。
+- loader/authのBad Requestはdetail内のloader errorとして表示し、route ErrorBoundaryへ落とさない。
+- `REVIEWING` かつ `draftOrderId` なしで、DB保存失敗マーカーがないquoteは、前回処理が中断されたものとして再試行可能にする。
+- Draft Order作成成功後にDB保存だけ失敗した可能性がある場合は、internal noteに保存失敗マーカーを残し、二重作成回避のためNEWへ戻さず、Shopify Admin > Orders > Draftsを確認してから対応する。
+
+それでもBad Requestになる場合に見るserver log:
+
+- `b2b_quote_detail_loader_start`
+- `b2b_quote_detail_loader_authenticated`
+- `b2b_quote_detail_loader_error`
+- `b2b_quote_draft_order_action_start`
+- `b2b_quote_draft_order_auth_error`
+- `b2b_quote_draft_order_graphql_failed`
+
+これらにはtoken、secret、cookie、raw headers、customer note全文は出さない。
 
 ## 8. 未実装
 
