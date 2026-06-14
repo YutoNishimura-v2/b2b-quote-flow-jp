@@ -374,6 +374,27 @@ intent=debug-admin-auth
 - `Admin認証だけ確認` のfetch先が `/app/quotes/<quoteId>/draft-order` になっていること。
 - ここでまだHTTP 400が出る場合は、React Router UI action CSRFではなくresource routeまたはShopify auth側のBad Requestとして切り分ける。
 
+### 0.7 Draft Order GraphQL例外の詳細化
+
+resource route POSTで `Admin認証だけ確認` は成功し、Draft Order作成だけが以下のgeneric errorになる状態まで進んだ。
+
+```text
+[api_error] Draft Orderを作成できませんでした。Shopify Admin APIの権限更新、variant、数量、ネットワーク状態を確認してください。
+```
+
+修正内容:
+
+- `admin.graphql` のthrowを `createDraftOrderForQuote` 内でcatchし、GraphQL clientのsafe messageを画面へ返す。
+- GraphQL responseがJSONとして読めない場合も、HTTP status/statusTextと先頭500文字を表示する。
+- access/scope系の文言を含むエラーは `[scope]` として分類する。
+- `Admin認証だけ確認` に `sessionScopes` 表示を追加し、現在のAdmin session tokenが `write_draft_orders` を持っているか確認できるようにした。
+
+次に見るもの:
+
+- `sessionScopes` に `write_draft_orders` が含まれるか。
+- Draft Order作成エラーが `[scope]` なら、dev storeの再インストールまたはsession更新が必要。
+- Draft Order作成エラーがGraphQL input系なら、mutation inputのshapeまたはvariantId/quantityを修正する。
+
 ## 8. 未実装
 
 今回のスパイクでは以下は実装していない。

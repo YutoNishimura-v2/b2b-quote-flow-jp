@@ -22,6 +22,12 @@ type DraftOrderCreateResponse = {
   };
 };
 
+type DraftOrderCreateError = {
+  type: "validation" | "graphql_user_error" | "graphql_error" | "api_error";
+  message: string;
+  field?: string;
+};
+
 export type DraftOrderCreateResult =
   | {
       ok: true;
@@ -34,11 +40,7 @@ export type DraftOrderCreateResult =
     }
   | {
       ok: false;
-      errors: Array<{
-        type: "validation" | "graphql_user_error" | "graphql_error" | "api_error";
-        message: string;
-        field?: string;
-      }>;
+      errors: DraftOrderCreateError[];
     };
 
 const DRAFT_ORDER_CREATE_MUTATION = `#graphql
@@ -82,6 +84,41 @@ function draftOrderNote(quote: QuoteRequest) {
     .join("\n");
 }
 
+function truncate(value: string, maxLength = 500) {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
+}
+
+async function describeGraphqlException(error: unknown): Promise<DraftOrderCreateError[]> {
+  if (error instanceof Response) {
+    const responseText = await error.clone().text().catch(() => "");
+
+    return [
+      {
+        type: error.status === 401 || error.status === 403 ? "graphql_error" : "api_error",
+        message: `Shopify Admin GraphQL returned HTTP ${error.status} ${error.statusText}${
+          responseText ? `: ${truncate(responseText)}` : ""
+        }`,
+      },
+    ];
+  }
+
+  if (error instanceof Error) {
+    return [
+      {
+        type: "api_error",
+        message: truncate(error.message || error.name),
+      },
+    ];
+  }
+
+  return [
+    {
+      type: "api_error",
+      message: `Unknown Shopify Admin GraphQL error: ${typeof error}`,
+    },
+  ];
+}
+
 export async function createDraftOrderForQuote(
   adminGraphql: AdminGraphqlClient,
   quote: QuoteRequest,
@@ -114,31 +151,59 @@ export async function createDraftOrderForQuote(
     };
   }
 
-  const response = await adminGraphql(DRAFT_ORDER_CREATE_MUTATION, {
-    variables: {
-      input: {
-        email: quote.email,
-        note: draftOrderNote(quote),
-        tags: ["b2b-quote-flow-jp", `quote-request:${quote.id}`],
-        lineItems: [
-          {
-            variantId: variantGid,
-            quantity: quote.quantity,
-          },
-        ],
-        customAttributes: [
-          { key: "Quote Request ID", value: quote.id },
-          { key: "Company", value: quote.companyName },
-          { key: "Contact", value: quote.contactName },
-          { key: "Wants invoice payment", value: quote.wantsInvoicePayment ? "yes" : "no" },
-          { key: "Needs approval PDF", value: quote.needsApprovalPdf ? "yes" : "no" },
-          { key: "Customer note", value: quote.customerNote || "" },
-        ],
-      },
-    },
-  });
+  let response: Response;
 
-  const body = (await response.json()) as DraftOrderCreateResponse;
+  try {
+    response = await adminGraphql(DRAFT_ORDER_CREATE_MUTATION, {
+      variables: {
+        input: {
+          email: quote.email,
+          note: draftOrderNote(quote),
+          tags: ["b2b-quote-flow-jp", `quote-request:${quote.id}`],
+          lineItems: [
+            {
+              variantId: variantGid,
+              quantity: quote.quantity,
+            },
+          ],
+          customAttributes: [
+            { key: "Quote Request ID", value: quote.id },
+            { key: "Company", value: quote.companyName },
+            { key: "Contact", value: quote.contactName },
+            { key: "Wants invoice payment", value: quote.wantsInvoicePayment ? "yes" : "no" },
+            { key: "Needs approval PDF", value: quote.needsApprovalPdf ? "yes" : "no" },
+            { key: "Customer note", value: quote.customerNote || "" },
+          ],
+        },
+      },
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      errors: await describeGraphqlException(error),
+    };
+  }
+
+  const responseClone = response.clone();
+  let body: DraftOrderCreateResponse;
+
+  try {
+    body = (await response.json()) as DraftOrderCreateResponse;
+  } catch {
+    const responseText = await responseClone.text().catch(() => "");
+
+    return {
+      ok: false,
+      errors: [
+        {
+          type: "api_error",
+          message: `Shopify Admin GraphQL response was not JSON. HTTP ${response.status} ${response.statusText}${
+            responseText ? `: ${truncate(responseText)}` : ""
+          }`,
+        },
+      ],
+    };
+  }
 
   if (body.errors?.length) {
     return {

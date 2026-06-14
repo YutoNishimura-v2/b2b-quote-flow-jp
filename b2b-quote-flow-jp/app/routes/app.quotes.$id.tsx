@@ -345,12 +345,13 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       }
 
       return jsonActionSuccess("[debug] Admin auth OK", [
-          { label: "shop", value: session.shop },
-          {
-            label: "myshopifyDomain",
-            value: body.data?.shop?.myshopifyDomain || "-",
-          },
-        ]);
+        { label: "shop", value: session.shop },
+        { label: "sessionScopes", value: session.scope || "-" },
+        {
+          label: "myshopifyDomain",
+          value: body.data?.shop?.myshopifyDomain || "-",
+        },
+      ]);
     } catch (error) {
       if (shouldRethrowShopifyResponse(error)) {
         throw error;
@@ -547,7 +548,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       const actionErrors = result.errors.map((error) => ({
         ...error,
         type:
-          error.type === "graphql_error" && isScopeLikeError(error.message)
+          isScopeLikeError(error.message)
             ? ("scope" as const)
             : error.type,
       }));
