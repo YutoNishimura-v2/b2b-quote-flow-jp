@@ -272,6 +272,32 @@ intent=debug-admin-auth
 - `Admin認証だけ確認` はdev spike用の診断UI。
 - 本番前に削除するか、dev-only表示にする。
 
+### 0.2 親app route loaderのBad Request対策
+
+`write_draft_orders` scope反映後も、Draft Order作成時にquote detail routeのErrorBoundaryで `Bad Request` が表示された。
+
+原因:
+
+- quote detail child route側のloader/actionはBad RequestをcatchしてActionData/loader dataへ変換していた。
+- しかし親route `app/routes/app.tsx` のloaderでも `authenticate.admin(request)` を実行しており、action後のrevalidation時にここでnon-redirect `Bad Request` が投げられると、child routeの通常UIまで戻れなかった。
+
+修正内容:
+
+- 親route loaderでも `authenticate.admin(request)` をtry/catchする。
+- Shopify auth flowに必要なredirect Responseはrethrowする。
+- non-redirect Response/ErrorはHTTP 4xx/5xxとして投げず、safe loader dataとして返す。
+- 親route側に `[auth]` の最小表示を出しつつ、child routeのdetail UIを表示できるようにする。
+- ログは `b2b_quote_app_loader_auth_error` に限定し、methodとsafe errorだけを出す。
+
+ログに出さないもの:
+
+- access token
+- Shopify API secret
+- session token
+- cookie
+- raw headers
+- full request body
+
 ## 8. 未実装
 
 今回のスパイクでは以下は実装していない。
