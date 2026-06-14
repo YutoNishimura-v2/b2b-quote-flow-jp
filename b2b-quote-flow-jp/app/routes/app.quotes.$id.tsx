@@ -665,7 +665,13 @@ export default function QuoteDetail() {
     formData.set("intent", intent);
 
     try {
-      const response = await fetch(window.location.href, {
+      const actionUrl = new URL(
+        `${window.location.pathname.replace(/\/$/, "")}/draft-order`,
+        window.location.origin,
+      );
+      actionUrl.search = window.location.search;
+
+      const response = await fetch(actionUrl.toString(), {
         method: "POST",
         body: formData,
         headers: {

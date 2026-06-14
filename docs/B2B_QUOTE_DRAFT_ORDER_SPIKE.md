@@ -359,6 +359,21 @@ intent=debug-admin-auth
 - これはShopify Admin embedded appからのaction POSTを許可するための設定。
 - secret、token、cookie、raw headersはログ出力しない。
 
+### 0.6 resource route POSTへの切り替え
+
+`allowedActionOrigins` 追加後もUI route actionへのPOSTで同じHTTP 400が続いた。
+
+追加対応:
+
+- quote detail画面からのPOST先をUI route `/app/quotes/:id` ではなくresource route `/app/quotes/:id/draft-order` に変更した。
+- resource route `app/routes/app.quotes.$id.draft-order.tsx` を追加し、既存Draft Order actionを再利用する。
+- React Routerの外部Origin CSRF保護はUI route action向けのため、resource route POSTでaction本体まで到達させる。
+
+確認方法:
+
+- `Admin認証だけ確認` のfetch先が `/app/quotes/<quoteId>/draft-order` になっていること。
+- ここでまだHTTP 400が出る場合は、React Router UI action CSRFではなくresource routeまたはShopify auth側のBad Requestとして切り分ける。
+
 ## 8. 未実装
 
 今回のスパイクでは以下は実装していない。
