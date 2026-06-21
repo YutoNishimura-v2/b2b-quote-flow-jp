@@ -24,28 +24,39 @@
 
     modal.innerHTML =
       '<div class="b2b-quote-modal__backdrop" data-b2b-quote-close></div>' +
-      '<div class="b2b-quote-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="b2b-quote-title">' +
+      '<div class="b2b-quote-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="b2b-quote-title" aria-describedby="b2b-quote-description">' +
       '<div class="b2b-quote-modal__header">' +
+      '<div>' +
       '<h2 class="b2b-quote-modal__title" id="b2b-quote-title"></h2>' +
+      '<p class="b2b-quote-modal__description" id="b2b-quote-description"></p>' +
+      '</div>' +
       '<button class="b2b-quote-modal__close" type="button" aria-label="閉じる" data-b2b-quote-close>&times;</button>' +
       "</div>" +
       '<p class="b2b-quote-product"></p>' +
       '<form class="b2b-quote-form">' +
-      '<label>会社名<input name="companyName" autocomplete="organization" required></label>' +
-      '<label>担当者名<input name="contactName" autocomplete="name" required></label>' +
-      '<label>メールアドレス<input name="email" type="email" autocomplete="email" required></label>' +
-      '<label>数量<input name="quantity" type="number" min="1" value="1" required></label>' +
-      '<label>備考<textarea name="customerNote"></textarea></label>' +
+      '<label><span>会社名 <span class="b2b-quote-required">必須</span></span><input name="companyName" autocomplete="organization" placeholder="株式会社サンプル" required></label>' +
+      '<label><span>担当者名 <span class="b2b-quote-required">必須</span></span><input name="contactName" autocomplete="name" placeholder="山田 太郎" required></label>' +
+      '<label><span>メールアドレス <span class="b2b-quote-required">必須</span></span><input name="email" type="email" autocomplete="email" placeholder="sales@example.com" required></label>' +
+      '<label><span>数量 <span class="b2b-quote-required">必須</span></span><input name="quantity" type="number" min="1" value="1" inputmode="numeric" required></label>' +
+      '<label><span>備考</span><textarea name="customerNote" placeholder="希望納期、数量条件、請求書払いの相談内容など"></textarea></label>' +
       '<div class="b2b-quote-form__checks">' +
       '<label><input name="wantsInvoicePayment" type="checkbox">請求書払いについて相談したい</label>' +
-      '<label><input name="needsApprovalPdf" type="checkbox">稟議用PDFを希望する</label>' +
+      '<label><input name="needsApprovalPdf" type="checkbox">社内稟議用の見積書が必要</label>' +
       "</div>" +
-      '<button class="b2b-quote-submit" type="submit">送信する</button>' +
+      '<button class="b2b-quote-submit" type="submit">見積依頼を送信</button>' +
       '<div class="b2b-quote-status" role="status" aria-live="polite"></div>' +
       "</form>" +
       "</div>";
 
-    setText(modal.querySelector(".b2b-quote-modal__title"), "法人見積を依頼");
+    setText(
+      modal.querySelector(".b2b-quote-modal__title"),
+      root.dataset.modalTitle || "法人・まとめ買いの見積依頼",
+    );
+    setText(
+      modal.querySelector(".b2b-quote-modal__description"),
+      root.dataset.modalDescription ||
+        "商品、数量、ご希望条件を店舗へ送信します。担当者が内容を確認してご連絡します。",
+    );
     setText(
       modal.querySelector(".b2b-quote-product"),
       variantTitle && variantTitle !== "Default Title"
@@ -97,12 +108,7 @@
           console.error("B2B quote response was not valid JSON", debug, error);
 
           throw new Error(
-            "送信レスポンスを解析できませんでした。status=" +
-              response.status +
-              " content-type=" +
-              contentType +
-              " body=" +
-              responseText,
+            "送信結果を確認できませんでした。時間をおいて再度お試しください。",
           );
         }
       }
@@ -118,12 +124,7 @@
         throw new Error(
           body && body.error
             ? body.error
-            : "送信できませんでした。status=" +
-                response.status +
-                " content-type=" +
-                contentType +
-                " body=" +
-                responseText,
+            : "送信できませんでした。入力内容を確認し、時間をおいて再度お試しください。",
         );
       }
 
@@ -170,7 +171,7 @@
       })
       .then(function () {
         status.dataset.state = "success";
-        setText(status, "見積依頼を受け付けました。");
+        setText(status, "見積依頼を受け付けました。担当者よりご連絡します。");
         form.reset();
       })
       .catch(function (error) {

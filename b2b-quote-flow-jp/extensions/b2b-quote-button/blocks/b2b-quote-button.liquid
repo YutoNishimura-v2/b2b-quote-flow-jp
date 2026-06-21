@@ -13,6 +13,8 @@
   data-product-url="{{ shop.url }}{{ product.url | escape }}"
   data-product-tags="{{ product.tags | join: ',' | escape }}"
   data-submit-endpoint-path="{{ block.settings.submit_endpoint_path | escape }}"
+  data-modal-title="{{ block.settings.modal_title | escape }}"
+  data-modal-description="{{ block.settings.modal_description | escape }}"
 >
   <button class="b2b-quote-button" type="button" data-b2b-quote-open>
     {{ block.settings.button_label | escape }}
@@ -31,6 +33,18 @@
       "id": "button_label",
       "label": "Button label",
       "default": "法人見積を依頼"
+    },
+    {
+      "type": "text",
+      "id": "modal_title",
+      "label": "Modal title",
+      "default": "法人・まとめ買いの見積依頼"
+    },
+    {
+      "type": "text",
+      "id": "modal_description",
+      "label": "Modal description",
+      "default": "商品、数量、ご希望条件を店舗へ送信します。担当者が内容を確認してご連絡します。"
     },
     {
       "type": "text",

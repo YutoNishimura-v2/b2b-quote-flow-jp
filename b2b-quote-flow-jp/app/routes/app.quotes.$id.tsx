@@ -10,6 +10,24 @@ import {
 } from "react-router";
 import { useState } from "react";
 
+import {
+  Badge,
+  Card,
+  Field,
+  Notice,
+  QuoteFlag,
+  StatusBadge,
+  cardGridStyle,
+  compactGridStyle,
+  eventTypeLabel,
+  fieldLabelStyle,
+  formatDateTime,
+  inputStyle,
+  mutedTextStyle,
+  pageStackStyle,
+  primaryButtonStyle,
+  secondaryButtonStyle,
+} from "../components/productUi";
 import { createDraftOrderForQuote } from "../models/draftOrder.server";
 import {
   claimQuoteDraftOrderCreation,
@@ -20,7 +38,10 @@ import {
   saveQuoteDraftOrder,
   updateQuoteStatusAndInternalNote,
 } from "../models/quoteRequest.server";
-import { recordQuoteEvent } from "../models/quoteEvent.server";
+import {
+  listQuoteEventsForQuote,
+  recordQuoteEvent,
+} from "../models/quoteEvent.server";
 import { authenticate } from "../shopify.server";
 
 const DRAFT_ORDER_SAVE_FAILURE_NOTE = "[draft_order_save_error]";
@@ -72,11 +93,13 @@ type SafeError = {
 type LoaderData =
   | {
       quote: NonNullable<Awaited<ReturnType<typeof getQuoteRequest>>>;
+      quoteEvents: Awaited<ReturnType<typeof listQuoteEventsForQuote>>;
       loaderError: null;
       showAdminAuthDebug: boolean;
     }
   | {
       quote: null;
+      quoteEvents: [];
       loaderError: {
         message: string;
         error: SafeError;
@@ -209,6 +232,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     if (!quote) {
       return {
         quote: null,
+        quoteEvents: [],
         showAdminAuthDebug: process.env.NODE_ENV !== "production",
         loaderError: {
           message: "見積依頼が見つかりません。一覧へ戻って再度開いてください。",
@@ -226,8 +250,11 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       hasDraftOrderId: Boolean(quote.draftOrderId),
     });
 
+    const quoteEvents = await listQuoteEventsForQuote(session.shop, quote.id, 12);
+
     return {
       quote,
+      quoteEvents,
       loaderError: null,
       showAdminAuthDebug: process.env.NODE_ENV !== "production",
     } satisfies LoaderData;
@@ -247,6 +274,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
     return {
       quote: null,
+      quoteEvents: [],
       showAdminAuthDebug: process.env.NODE_ENV !== "production",
       loaderError: {
         message:
@@ -767,7 +795,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 };
 
 export default function QuoteDetail() {
-  const { quote, loaderError, showAdminAuthDebug } =
+  const { quote, quoteEvents, loaderError, showAdminAuthDebug } =
     useLoaderData<typeof loader>();
   const [actionData, setActionData] = useState<ActionData | null>(null);
   const [submittingIntent, setSubmittingIntent] = useState<string | null>(null);
@@ -776,6 +804,24 @@ export default function QuoteDetail() {
   const actionDraftOrderCreated =
     actionData?.ok &&
     actionData.details?.some((detail) => detail.label === "Draft Order ID");
+  const actionStatus =
+    actionData?.ok &&
+    actionData.details?.find((detail) => detail.label === "Quote status")
+      ?.value;
+  const displayedStatus =
+    typeof actionStatus === "string" ? actionStatus : quote?.status || "NEW";
+  const actionDraftOrderId =
+    actionData?.ok &&
+    actionData.details?.find((detail) => detail.label === "Draft Order ID")
+      ?.value;
+  const actionDraftOrderName =
+    actionData?.ok &&
+    actionData.details?.find((detail) => detail.label === "Draft Order Name")
+      ?.value;
+  const actionDraftOrderUrl =
+    actionData?.ok &&
+    actionData.details?.find((detail) => detail.label === "管理画面リンク")
+      ?.value;
 
   async function submitAction(
     intent: "create-draft-order" | "debug-admin-auth" | "update-quote",
@@ -855,50 +901,105 @@ export default function QuoteDetail() {
   if (loaderError || !quote) {
     return (
       <s-page heading="見積依頼詳細">
-        <s-link href="/app">一覧へ戻る</s-link>
-        <s-section heading="エラー">
-          <s-stack direction="block" gap="base">
-            <s-paragraph>{loaderError?.message || "見積依頼詳細を表示できませんでした。"}</s-paragraph>
+        <div style={pageStackStyle}>
+          <Link to="/app">一覧へ戻る</Link>
+          <Card title="見積依頼を表示できません">
+            <p style={{ margin: 0 }}>
+              {loaderError?.message || "見積依頼詳細を表示できませんでした。"}
+            </p>
             {loaderError ? (
-              <s-paragraph>
+              <p style={{ ...mutedTextStyle, marginTop: 8 }}>
                 [{loaderError.error.type}]
                 {loaderError.error.status ? ` ${loaderError.error.status}` : ""}{" "}
                 {loaderError.error.statusText || loaderError.error.message || ""}
-              </s-paragraph>
+              </p>
             ) : null}
-          </s-stack>
-        </s-section>
+          </Card>
+        </div>
       </s-page>
     );
   }
 
   return (
-    <s-page heading="見積依頼詳細">
-      <s-link href="/app">一覧へ戻る</s-link>
-      <s-section heading={quote.companyName}>
-        <s-stack direction="block" gap="base">
-          <s-paragraph>ステータス: {quote.status}</s-paragraph>
-          <s-paragraph>担当者: {quote.contactName}</s-paragraph>
-          <s-paragraph>メール: {quote.email}</s-paragraph>
-          <s-paragraph>商品: {quote.productTitle}</s-paragraph>
-          <s-paragraph>バリアント: {quote.variantTitle || "-"}</s-paragraph>
-          <s-paragraph>数量: {quote.quantity}</s-paragraph>
-          <s-paragraph>
-            請求書払い相談: {quote.wantsInvoicePayment ? "あり" : "なし"}
-          </s-paragraph>
-          <s-paragraph>
-            稟議用PDF希望: {quote.needsApprovalPdf ? "あり" : "なし"}
-          </s-paragraph>
-          <s-paragraph>備考: {quote.customerNote || "-"}</s-paragraph>
-          <div>
-            <s-paragraph>内部メモ</s-paragraph>
+    <s-page heading={quote.companyName}>
+      <div style={pageStackStyle}>
+        <Link to="/app">一覧へ戻る</Link>
+
+        <Card>
+          <div
+            style={{
+              alignItems: "flex-start",
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 14,
+              justifyContent: "space-between",
+            }}
+          >
+            <div>
+              <p style={fieldLabelStyle}>法人見積対応</p>
+              <h1 style={{ fontSize: 24, lineHeight: 1.25, margin: "4px 0" }}>
+                {quote.companyName}
+              </h1>
+              <p style={mutedTextStyle}>
+                受付日時: {formatDateTime(quote.createdAt)}
+              </p>
+            </div>
+            <StatusBadge status={displayedStatus} />
+          </div>
+        </Card>
+
+        <div style={cardGridStyle}>
+          <Card title="顧客情報">
+            <div style={compactGridStyle}>
+              <Field label="会社名">{quote.companyName}</Field>
+              <Field label="担当者">{quote.contactName}</Field>
+              <Field label="メール">
+                <a href={`mailto:${quote.email}`}>{quote.email}</a>
+              </Field>
+              <Field label="電話番号">{quote.phone || "-"}</Field>
+            </div>
+          </Card>
+
+          <Card title="見積依頼内容">
+            <div style={{ display: "grid", gap: 14 }}>
+              <div style={compactGridStyle}>
+                <Field label="商品">{quote.productTitle}</Field>
+                <Field label="バリアント">{quote.variantTitle || "-"}</Field>
+                <Field label="数量">{quote.quantity}</Field>
+                <Field label="商品ページ">
+                  {quote.productUrl ? (
+                    <a href={quote.productUrl} target="_blank" rel="noreferrer">
+                      商品ページを開く
+                    </a>
+                  ) : (
+                    "-"
+                  )}
+                </Field>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <QuoteFlag active={quote.wantsInvoicePayment}>
+                  請求書払い相談
+                </QuoteFlag>
+                <QuoteFlag active={quote.needsApprovalPdf}>
+                  社内稟議用見積書
+                </QuoteFlag>
+              </div>
+              <Field label="顧客メモ">
+                {quote.customerNote ? quote.customerNote : "メモはありません。"}
+              </Field>
+            </div>
+          </Card>
+        </div>
+
+        <Card title="内部対応">
+          <div style={{ display: "grid", gap: 12, maxWidth: 760 }}>
             <label>
-              Status
+              <span style={fieldLabelStyle}>対応ステータス</span>
               <select
                 value={quoteStatus}
                 onChange={(event) => setQuoteStatus(event.currentTarget.value)}
                 disabled={Boolean(submittingIntent)}
-                style={{ display: "block", marginTop: 4 }}
+                style={{ ...inputStyle, display: "block", marginTop: 6 }}
               >
                 {QUOTE_STATUS_OPTIONS.map((status) => (
                   <option key={status} value={status}>
@@ -907,14 +1008,14 @@ export default function QuoteDetail() {
                 ))}
               </select>
             </label>
-            <label style={{ display: "block", marginTop: 8 }}>
-              Internal note
+            <label>
+              <span style={fieldLabelStyle}>内部メモ</span>
               <textarea
                 value={internalNote}
                 onChange={(event) => setInternalNote(event.currentTarget.value)}
                 disabled={Boolean(submittingIntent)}
                 rows={4}
-                style={{ display: "block", marginTop: 4, width: "100%" }}
+                style={{ ...inputStyle, display: "block", marginTop: 6 }}
                 placeholder="営業対応メモ、確認事項、次アクションなど"
               />
             </label>
@@ -922,58 +1023,86 @@ export default function QuoteDetail() {
               type="button"
               disabled={Boolean(submittingIntent)}
               onClick={() => submitAction("update-quote")}
-              style={{ marginTop: 8 }}
+              style={secondaryButtonStyle}
             >
               {submittingIntent === "update-quote"
                 ? "更新中..."
-                : "status/internal noteを更新"}
+                : "対応状況を保存"}
             </button>
           </div>
-          {quote.productUrl ? (
-            <Link to={quote.productUrl} target="_blank" rel="noreferrer">
-              商品ページを開く
-            </Link>
-          ) : null}
+        </Card>
+
+        <Card title="Draft Order">
           {quote.draftOrderId ? (
-            <div aria-label="Draft Order作成状態">
-              <s-paragraph>Draft Order作成済み</s-paragraph>
-              <s-paragraph>Quote status: {quote.status}</s-paragraph>
-              <s-paragraph>Draft Order ID: {quote.draftOrderId}</s-paragraph>
-              <s-paragraph>Draft Order Name: {quote.draftOrderName || "-"}</s-paragraph>
+            <div
+              aria-label="Draft Order作成状態"
+              style={{ display: "grid", gap: 12 }}
+            >
+              <Notice tone="success">
+                <strong>下書き注文は作成済みです。</strong>
+                <br />
+                二重作成を防ぐため、このquoteでは作成ボタンを表示しません。
+              </Notice>
+              <div style={compactGridStyle}>
+                <Field label="Quote status">
+                  <StatusBadge status={quote.status} />
+                </Field>
+                <Field label="Draft Order name">
+                  {quote.draftOrderName || "-"}
+                </Field>
+                <Field label="Draft Order ID">{quote.draftOrderId}</Field>
+              </div>
               {quote.draftOrderCreatedAt ? (
-                <s-paragraph>
-                  作成日時: {new Date(quote.draftOrderCreatedAt).toLocaleString("ja-JP")}
-                </s-paragraph>
+                <Field label="作成日時">
+                  {formatDateTime(quote.draftOrderCreatedAt)}
+                </Field>
               ) : null}
               {quote.draftOrderAdminUrl ? (
-                <s-paragraph>
-                  管理画面リンク:{" "}
-                  <a href={quote.draftOrderAdminUrl} target="_blank" rel="noreferrer">
-                    Shopify AdminでDraft Orderを開く
-                  </a>
-                </s-paragraph>
-              ) : (
-                <s-paragraph>管理画面リンク: -</s-paragraph>
-              )}
-              <s-paragraph>
-                このquoteではDraft Order再作成ボタンを表示しません。二重作成防止のため、既存のDraft Orderを確認してください。
-              </s-paragraph>
+                <a href={quote.draftOrderAdminUrl} target="_blank" rel="noreferrer">
+                  Shopify Adminで下書き注文を開く
+                </a>
+              ) : null}
             </div>
           ) : (
             <>
               {actionDraftOrderCreated ? (
-                <s-paragraph>
-                  Draft Order作成済みです。二重作成防止のため、再作成ボタンは表示しません。
-                </s-paragraph>
+                <div style={{ display: "grid", gap: 12 }}>
+                  <Notice tone="success">
+                    <strong>下書き注文を作成しました。</strong>
+                    <br />
+                    二重作成防止のため、この画面では再作成ボタンを表示しません。
+                  </Notice>
+                  <div style={compactGridStyle}>
+                    <Field label="Draft Order name">
+                      {actionDraftOrderName || "-"}
+                    </Field>
+                    <Field label="Draft Order ID">
+                      {actionDraftOrderId || "-"}
+                    </Field>
+                    <Field label="Quote status">
+                      <StatusBadge status="QUOTE_CREATED" />
+                    </Field>
+                  </div>
+                  {actionDraftOrderUrl &&
+                  actionDraftOrderUrl.startsWith("https://") ? (
+                    <a href={actionDraftOrderUrl} target="_blank" rel="noreferrer">
+                      Shopify Adminで下書き注文を開く
+                    </a>
+                  ) : null}
+                </div>
               ) : quote.status === "NEW" ||
                 (quote.status === "REVIEWING" &&
                   !quote.draftOrderId &&
                   !hasDraftOrderSaveFailureMarker(quote.internalNote)) ? (
-                <div>
+                <div style={{ display: "grid", gap: 10 }}>
+                  <p style={{ margin: 0 }}>
+                    商品、数量、顧客メール、依頼内容をShopifyの下書き注文へ引き継ぎます。
+                  </p>
                   <button
                     type="button"
                     disabled={Boolean(submittingIntent)}
                     onClick={() => submitAction("create-draft-order")}
+                    style={primaryButtonStyle}
                   >
                     {submittingIntent === "create-draft-order"
                       ? "作成中..."
@@ -981,20 +1110,59 @@ export default function QuoteDetail() {
                   </button>
                 </div>
               ) : (
-                <s-paragraph>
+                <Notice tone="neutral">
                   {quote.status === "REVIEWING" && !quote.draftOrderId
-                    ? "前回のDraft Order作成後に保存だけ失敗した可能性があります。Shopify AdminのDraftsを確認してください。"
+                    ? "前回のDraft Order作成後に保存だけ失敗した可能性があります。Shopify Adminの下書き注文を確認してください。"
                     : "Draft Order作成はNEW statusのquoteで実行できます。"}
-                </s-paragraph>
+                </Notice>
               )}
             </>
           )}
+        </Card>
+
+        <Card title="Events">
+          {quoteEvents.length === 0 ? (
+            <p style={mutedTextStyle}>このquoteのイベントはまだありません。</p>
+          ) : (
+            <div style={{ display: "grid", gap: 10 }}>
+              {quoteEvents.map((event) => (
+                <div
+                  key={event.id}
+                  style={{
+                    borderBottom: "1px solid #f1f1f1",
+                    display: "grid",
+                    gap: 4,
+                    paddingBottom: 10,
+                  }}
+                >
+                  <div
+                    style={{
+                      alignItems: "center",
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 8,
+                    }}
+                  >
+                    <Badge tone="info">{eventTypeLabel(event.type)}</Badge>
+                    <span style={mutedTextStyle}>
+                      {formatDateTime(event.createdAt)}
+                    </span>
+                  </div>
+                  <p style={{ margin: 0 }}>{event.message}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card title="操作結果">
           {showAdminAuthDebug ? (
-            <div>
+            <div style={{ marginBottom: 12 }}>
               <button
                 type="button"
                 disabled={Boolean(submittingIntent)}
                 onClick={() => submitAction("debug-admin-auth")}
+                style={{ ...secondaryButtonStyle, fontSize: 12, minHeight: 32 }}
               >
                 {submittingIntent === "debug-admin-auth"
                   ? "確認中..."
@@ -1003,35 +1171,46 @@ export default function QuoteDetail() {
             </div>
           ) : null}
           {actionData?.ok ? (
-            <div>
-              <s-paragraph>{actionData.message}</s-paragraph>
+            <Notice tone="success">
+              <p style={{ margin: 0 }}>{actionData.message}</p>
               {actionData.details?.map((detail) => (
-                <s-paragraph key={`${detail.label}:${detail.value}`}>
+                <p
+                  key={`${detail.label}:${detail.value}`}
+                  style={{ margin: "6px 0 0" }}
+                >
                   {detail.label}:{" "}
                   {detail.label === "管理画面リンク" &&
                   detail.value.startsWith("https://") ? (
                     <a href={detail.value} target="_blank" rel="noreferrer">
-                      Shopify AdminでDraft Orderを開く
+                      Shopify Adminで下書き注文を開く
                     </a>
                   ) : (
                     detail.value
                   )}
-                </s-paragraph>
+                </p>
               ))}
-            </div>
+            </Notice>
           ) : null}
           {actionData && !actionData.ok ? (
-            <div>
+            <Notice tone="critical">
               {actionData.errors.map((error) => (
-                <s-paragraph key={`${error.type}:${error.field || ""}:${error.message}`}>
+                <p
+                  key={`${error.type}:${error.field || ""}:${error.message}`}
+                  style={{ margin: "0 0 6px" }}
+                >
                   [{error.type}]
                   {error.field ? ` ${error.field}:` : ""} {error.message}
-                </s-paragraph>
+                </p>
               ))}
-            </div>
+            </Notice>
           ) : null}
-        </s-stack>
-      </s-section>
+          {!actionData ? (
+            <p style={mutedTextStyle}>
+              status更新やDraft Order作成の結果がここに表示されます。開発環境では小さな認証確認ボタンも表示されます。
+            </p>
+          ) : null}
+        </Card>
+      </div>
     </s-page>
   );
 }
@@ -1049,15 +1228,15 @@ export function ErrorBoundary() {
 
   return (
     <s-page heading="見積依頼詳細">
-      <s-link href="/app">一覧へ戻る</s-link>
-      <s-section heading="エラー">
-        <s-stack direction="block" gap="base">
-          <s-paragraph>
+      <div style={pageStackStyle}>
+        <Link to="/app">一覧へ戻る</Link>
+        <Card title="エラー">
+          <p>
             見積依頼詳細を表示できませんでした。画面を再読み込みするか、一覧へ戻って再度開いてください。
-          </s-paragraph>
-          <s-paragraph>{message}</s-paragraph>
-        </s-stack>
-      </s-section>
+          </p>
+          <p style={mutedTextStyle}>{message}</p>
+        </Card>
+      </div>
     </s-page>
   );
 }

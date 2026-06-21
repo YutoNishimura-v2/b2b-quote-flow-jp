@@ -6,16 +6,27 @@
   width: 100%;
   min-height: 48px;
   border: 1px solid rgba(18, 18, 18, 0.9);
+  border-radius: 6px;
   background: #121212;
   color: #ffffff;
   cursor: pointer;
   font: inherit;
   font-weight: 600;
+  letter-spacing: 0;
   padding: 12px 18px;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
 }
 
 .b2b-quote-button:hover {
   background: #2d2d2d;
+  border-color: #2d2d2d;
+}
+
+.b2b-quote-button:active {
+  transform: translateY(1px);
 }
 
 .b2b-quote-modal[hidden] {
@@ -31,7 +42,7 @@
 .b2b-quote-modal__backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.48);
+  background: rgba(0, 0, 0, 0.42);
 }
 
 .b2b-quote-modal__dialog {
@@ -39,11 +50,12 @@
   width: min(560px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
   overflow: auto;
-  margin: 16px auto;
+  margin: 24px auto;
   background: #ffffff;
   color: #121212;
-  padding: 20px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.24);
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.22);
 }
 
 .b2b-quote-modal__header {
@@ -51,40 +63,74 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 
 .b2b-quote-modal__title {
   margin: 0;
-  font-size: 20px;
-  line-height: 1.35;
+  font-size: 22px;
+  line-height: 1.3;
+}
+
+.b2b-quote-modal__description {
+  color: rgba(18, 18, 18, 0.72);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 8px 0 0;
 }
 
 .b2b-quote-modal__close {
   border: 0;
+  border-radius: 999px;
   background: transparent;
   cursor: pointer;
   font-size: 26px;
   line-height: 1;
+  min-height: 34px;
+  min-width: 34px;
+}
+
+.b2b-quote-modal__close:hover {
+  background: rgba(18, 18, 18, 0.06);
+}
+
+.b2b-quote-product {
+  background: rgba(18, 18, 18, 0.04);
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0 0 18px;
+  padding: 12px;
 }
 
 .b2b-quote-form {
   display: grid;
-  gap: 12px;
+  gap: 14px;
 }
 
 .b2b-quote-form label {
   display: grid;
   gap: 6px;
   font-size: 14px;
+  line-height: 1.4;
 }
 
 .b2b-quote-form input,
 .b2b-quote-form textarea {
   width: 100%;
   border: 1px solid rgba(18, 18, 18, 0.24);
+  border-radius: 6px;
+  box-sizing: border-box;
   font: inherit;
+  min-height: 44px;
   padding: 10px;
+}
+
+.b2b-quote-form input:focus,
+.b2b-quote-form textarea:focus {
+  border-color: rgba(18, 18, 18, 0.72);
+  outline: 2px solid rgba(18, 18, 18, 0.12);
+  outline-offset: 1px;
 }
 
 .b2b-quote-form textarea {
@@ -92,37 +138,80 @@
   resize: vertical;
 }
 
+.b2b-quote-required {
+  color: #b42318;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .b2b-quote-form__checks {
   display: grid;
   gap: 8px;
+  margin: 2px 0;
 }
 
 .b2b-quote-form__checks label {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
+}
+
+.b2b-quote-form__checks input {
+  margin-top: 2px;
+  min-height: auto;
+  width: auto;
 }
 
 .b2b-quote-submit {
   min-height: 44px;
   border: 0;
+  border-radius: 6px;
   background: #121212;
   color: #ffffff;
   cursor: pointer;
   font: inherit;
   font-weight: 600;
+  letter-spacing: 0;
   padding: 10px 16px;
 }
 
+.b2b-quote-submit:disabled {
+  cursor: progress;
+  opacity: 0.68;
+}
+
 .b2b-quote-status {
-  min-height: 20px;
+  border-radius: 6px;
   font-size: 14px;
+  line-height: 1.5;
+  min-height: 20px;
 }
 
 .b2b-quote-status[data-state="error"] {
+  background: #fef3f2;
   color: #b42318;
+  padding: 10px 12px;
 }
 
 .b2b-quote-status[data-state="success"] {
+  background: #ecfdf3;
   color: #067647;
+  padding: 10px 12px;
+}
+
+@media (max-width: 749px) {
+  .b2b-quote-modal__dialog {
+    margin: 12px auto;
+    max-height: calc(100vh - 24px);
+    padding: 18px;
+    width: min(100vw - 24px, 560px);
+  }
+
+  .b2b-quote-modal__header {
+    gap: 10px;
+  }
+
+  .b2b-quote-modal__title {
+    font-size: 20px;
+  }
 }

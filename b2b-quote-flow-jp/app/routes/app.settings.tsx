@@ -2,6 +2,16 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { Form, Link, useActionData, useLoaderData } from "react-router";
 
 import {
+  Badge,
+  Card,
+  Field,
+  Notice,
+  inputStyle,
+  mutedTextStyle,
+  pageStackStyle,
+  primaryButtonStyle,
+} from "../components/productUi";
+import {
   getShopSettings,
   updateShopSettings,
 } from "../models/shopSettings.server";
@@ -65,33 +75,52 @@ export default function Settings() {
       : {};
 
   return (
-    <s-page heading="β設定">
-      <s-stack direction="block" gap="base">
+    <s-page heading="設定">
+      <div style={pageStackStyle}>
         <Link to="/app">一覧へ戻る</Link>
-        <s-section heading="通知設定">
-          <s-stack direction="block" gap="base">
-            <s-paragraph>Shop: {shop}</s-paragraph>
-            <s-paragraph>
-              見積依頼が保存されたとき、通知先メールへmerchant notificationを送ります。
-            </s-paragraph>
+
+        <Card title="B2B Quote Flow JP 設定">
+          <div style={{ display: "grid", gap: 10 }}>
+            <p style={{ margin: 0 }}>
+              無料βで見積依頼を取りこぼさないための最小設定です。通知先とStorefront表示を確認してから、テスト見積を送信してください。
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              <Badge tone="neutral">Shop: {shop}</Badge>
+              <Badge tone={hasEmailProvider ? "success" : "reviewing"}>
+                通知プロバイダ {hasEmailProvider ? "設定済み" : "未設定"}
+              </Badge>
+            </div>
+          </div>
+        </Card>
+
+        <Card title="通知設定">
+          <div style={{ display: "grid", gap: 14, maxWidth: 680 }}>
+            <p style={mutedTextStyle}>
+              見積依頼が保存されたとき、通知先メールへmerchant notificationを送信します。
+            </p>
             {!hasEmailProvider ? (
-              <s-paragraph>
-                メール送信プロバイダが未設定です。保存はできますが、通知はイベントログにskippedとして残ります。
-              </s-paragraph>
+              <Notice tone="info">
+                メール送信プロバイダが未設定です。設定は保存できますが、通知は送信されず、イベントログにskippedとして記録されます。
+              </Notice>
             ) : null}
             <Form method="post">
-              <div style={{ display: "grid", gap: 12, maxWidth: 560 }}>
+              <div style={{ display: "grid", gap: 14 }}>
                 <label>
-                  通知先メール
+                  <span style={{ display: "block", fontWeight: 700 }}>
+                    通知先メール
+                  </span>
                   <input
                     name="notificationEmail"
                     type="email"
                     defaultValue={currentSettings.notificationEmail || ""}
                     placeholder="sales@example.com"
-                    style={{ display: "block", marginTop: 4, width: "100%" }}
+                    style={{ ...inputStyle, display: "block", marginTop: 6 }}
                   />
+                  <span style={{ ...mutedTextStyle, display: "block", marginTop: 4 }}>
+                    見積依頼を最初に確認する担当者または共有メールを指定します。
+                  </span>
                 </label>
-                <label>
+                <label style={{ alignItems: "center", display: "flex", gap: 8 }}>
                   <input
                     name="quoteEmailNotificationsEnabled"
                     type="checkbox"
@@ -101,41 +130,82 @@ export default function Settings() {
                   />{" "}
                   見積依頼のメール通知を有効にする
                 </label>
-                <button type="submit">設定を保存</button>
+                <div>
+                  <button type="submit" style={primaryButtonStyle}>
+                    設定を保存
+                  </button>
+                </div>
               </div>
             </Form>
             {actionData?.ok ? (
-              <s-paragraph>設定を保存しました。</s-paragraph>
+              <Notice tone="success">設定を保存しました。</Notice>
             ) : null}
             {Object.keys(actionErrors).length > 0 ? (
-              <div>
+              <Notice tone="critical">
                 {Object.entries(actionErrors).map(([field, message]) => (
-                  <s-paragraph key={field}>
+                  <p key={field} style={{ margin: "0 0 6px" }}>
                     [{field}] {message}
-                  </s-paragraph>
+                  </p>
                 ))}
-              </div>
+              </Notice>
             ) : null}
-          </s-stack>
-        </s-section>
-        <s-section heading="Theme設定">
-          <s-stack direction="block" gap="base">
-            <s-paragraph>
-              見積ボタン文言はTheme App Extension blockの`Button label`で変更します。
-            </s-paragraph>
-            <s-paragraph>
-              βテストでは、まず「法人見積を依頼」または「まとめ買い見積を依頼」で反応を確認してください。
-            </s-paragraph>
-          </s-stack>
-        </s-section>
-        <s-section heading="データ利用説明">
-          <s-stack direction="block" gap="base">
-            <s-paragraph>
-              Draft Order作成では、顧客メールとDraft Order関連データを扱います。Protected Customer Data設定と説明文は本番前に必ず再確認してください。
-            </s-paragraph>
-          </s-stack>
-        </s-section>
-      </s-stack>
+          </div>
+        </Card>
+
+        <Card title="通知プロバイダ">
+          <div style={{ display: "grid", gap: 12 }}>
+            <p style={{ margin: 0 }}>
+              β配信でメール通知を実際に送る場合は、環境変数でResendまたは通知Webhookを設定します。
+            </p>
+            <div
+              style={{
+                display: "grid",
+                gap: 12,
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              }}
+            >
+              <Field label="Resend">
+                `RESEND_API_KEY` と `B2B_QUOTE_NOTIFICATION_FROM`
+              </Field>
+              <Field label="Webhook">
+                `B2B_QUOTE_NOTIFICATION_WEBHOOK_URL`
+              </Field>
+            </div>
+            <p style={mutedTextStyle}>
+              どちらも未設定の場合、quoteは保存され、通知イベントはskippedとして残ります。
+            </p>
+          </div>
+        </Card>
+
+        <Card title="Storefront表示">
+          <div style={{ display: "grid", gap: 12 }}>
+            <p style={{ margin: 0 }}>
+              見積ボタンの文言は、Theme Editorで商品ページに配置したB2B Quote Flow JP App Blockから変更します。
+            </p>
+            <div
+              style={{
+                display: "grid",
+                gap: 12,
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              }}
+            >
+              <Field label="推奨ボタン文言">法人見積を依頼</Field>
+              <Field label="推奨モーダルタイトル">
+                法人・まとめ買いの見積依頼
+              </Field>
+            </div>
+            <p style={mutedTextStyle}>
+              βテストでは、まず標準コピーのまま反応を確認し、業種に合わせて「まとめ買い見積を依頼」などへ調整してください。
+            </p>
+          </div>
+        </Card>
+
+        <Card title="Protected Customer Data">
+          <p style={{ margin: 0 }}>
+            Draft Order作成では顧客メールと下書き注文関連データを扱います。本番運用前に、Partner DashboardのProtected Customer Data設定と利用説明が一致していることを確認してください。
+          </p>
+        </Card>
+      </div>
     </s-page>
   );
 }

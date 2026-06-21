@@ -43,6 +43,18 @@ export function listQuoteEvents(shop: string, take = 20) {
   });
 }
 
+export function listQuoteEventsForQuote(
+  shop: string,
+  quoteRequestId: string,
+  take = 20,
+) {
+  return prisma.quoteEvent.findMany({
+    where: { shop, quoteRequestId },
+    orderBy: { createdAt: "desc" },
+    take,
+  });
+}
+
 export async function recordQuoteEvent(input: {
   shop: string;
   quoteRequestId?: string | null;
